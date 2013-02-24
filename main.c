@@ -6,6 +6,7 @@
 size_t amount = 0;
 bool verbose = false;
 char cs_base = 230;
+bool dumps = false;
 
 void read_args(int argc, char *argv[]);
 
@@ -21,7 +22,7 @@ int main(int argc, char *argv[]) {
     mem_dump();
     printf("\n");
 
-    int test_size = 32;
+    int test_size = 5;
     void* list[amount/test_size];
     int list_cs[amount/test_size];
 
@@ -40,7 +41,7 @@ int main(int argc, char *argv[]) {
         list_cs[count] = cs;
         list[count++] = p;
     }
-    // mem_dump();
+    mem_dump();
     // count --;
     printf("Allocated %d blocks of %d b\n", count, test_size);
 
@@ -62,12 +63,13 @@ int main(int argc, char *argv[]) {
 
 //REALLOC
     int count2 = 0;
+    int test_size2 = 2;
     for(int i=0; i<count; i++) {
-        void *p = mem_realloc(list[i], 15);
+        void *p = mem_realloc(list[i], test_size2);
         
         char cs = cs_base;
         char value;
-        for (int i=0; i<15; i++) {
+        for (int i=0; i<test_size2; i++) {
             value = rand() % 255;
             *(char*)(p+i) = value;
             cs ^= value;
@@ -75,7 +77,7 @@ int main(int argc, char *argv[]) {
         list_cs[count2] = cs;
         list[count2++] = p;
     }
-    // mem_dump();
+    mem_dump();
 
 
 //CHECK CS
@@ -83,7 +85,7 @@ int main(int argc, char *argv[]) {
 
     for(int i=0; i<count; i++) {
         char cs = cs_base;
-        for (int j=0; j<15; j++) {
+        for (int j=0; j<test_size2; j++) {
             cs ^= *((char*)(list[i]+j));
         }
         cs_check = cs_check && (cs == list_cs[i]);
@@ -102,10 +104,14 @@ void read_args(int argc, char *argv[]) {
         if (strcmp(argv[i], "-m") == 0) {
             amount = atoi(argv[i+1]);
             i++;
-        }
+        } else
 
         if (strcmp(argv[i], "-v") == 0) {
             verbose = true;
+        } else
+
+        if (strcmp(argv[i], "-d") == 0) {
+            dumps = true;
         }
     }
 

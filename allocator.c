@@ -245,6 +245,7 @@ void mem_free(void *addr) {
 }
 
 void mem_dump() {
+    if (!dumps) return;
     int s = 0;
     header *h;
     printf("state:\t          size:\t     prev_size:"
