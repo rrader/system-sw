@@ -1,2 +1,7 @@
-alloc: main.c allocator.c allocator.h
-	gcc -std=c99 main.c allocator.c -o alloc
+C_FILES = main.c allocator.c
+
+alloc: $(C_FILES) allocator.h
+	gcc -std=c99 $(C_FILES) -o alloc -Wall
+
+clean:
+	rm -f alloc *.o

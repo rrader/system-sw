@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
     int count = 0;
     void *p;
 
-    while (p = mem_alloc(test_size)) {
+    while ((p = mem_alloc(test_size))) {
         // printf("%d\n", p - mi.memory);
         char cs = cs_base;
         char value;
