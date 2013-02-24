@@ -10,10 +10,6 @@ bool dumps = false;
 
 void read_args(int argc, char *argv[]);
 
-char cs() {
-
-}
-
 int main(int argc, char *argv[]) {
     read_args(argc, argv);
 
@@ -116,7 +112,7 @@ void read_args(int argc, char *argv[]) {
     }
 
     if ((0 == amount) || (1 >= argc)) {
-        printf("usage: ./alloc -m <amount> [-v]\n");
+        printf("usage: ./alloc -m <amount> [-v] [-d]\n");
         exit(0);
     }
 }
