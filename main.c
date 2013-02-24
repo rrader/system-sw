@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <time.h>
 
 #include "allocator.h"
 
@@ -7,8 +8,12 @@ size_t amount = 0;
 bool verbose = false;
 char cs_base = 230;
 bool dumps = false;
+bool stats = false;
+bool test = false;
 
 void read_args(int argc, char *argv[]);
+void test_mem();
+void get_stats();
 
 int main(int argc, char *argv[]) {
     read_args(argc, argv);
@@ -18,7 +23,48 @@ int main(int argc, char *argv[]) {
     mem_dump();
     printf("\n");
 
-    int test_size = 5;
+    if (test) {
+        test_mem();
+    }
+
+    if (stats) {
+        get_stats();
+    }
+}
+
+void read_args(int argc, char *argv[]) {
+    for(int i=1; i<argc; i++) {
+        if (strcmp(argv[i], "-m") == 0) {
+            amount = atoi(argv[i+1]);
+            i++;
+        } else
+
+        if (strcmp(argv[i], "-v") == 0) {
+            verbose = true;
+        } else
+
+        if (strcmp(argv[i], "-d") == 0) {
+            dumps = true;
+        } else
+
+        if (strcmp(argv[i], "-s") == 0) {
+            stats = true;
+        }
+
+        if (strcmp(argv[i], "-t") == 0) {
+            test = true;
+        }
+    }
+
+    if ((0 == amount) || (1 >= argc)) {
+        printf("usage: ./alloc -m <amount> [-v] [-d]\n");
+        exit(0);
+    }
+}
+
+
+void test_mem() {
+    int test_size = 32;
     void* list[amount/test_size];
     int list_cs[amount/test_size];
 
@@ -59,7 +105,7 @@ int main(int argc, char *argv[]) {
 
 //REALLOC
     int count2 = 0;
-    int test_size2 = 2;
+    int test_size2 = 15;
     for(int i=0; i<count; i++) {
         void *p = mem_realloc(list[i], test_size2);
         
@@ -95,24 +141,28 @@ int main(int argc, char *argv[]) {
     mem_dump();
 }
 
-void read_args(int argc, char *argv[]) {
-    for(int i=1; i<argc; i++) {
-        if (strcmp(argv[i], "-m") == 0) {
-            amount = atoi(argv[i+1]);
-            i++;
-        } else
+void alloc_test(int test_size) {
+    void* list[amount/test_size];
+    clock_t uptime = clock() / (CLOCKS_PER_SEC / 1000);
+    int count = 0;
+    while ((list[count++] = mem_alloc(test_size)));
+    clock_t uptime2 = clock() / (CLOCKS_PER_SEC / 1000);
+    int delta = uptime2-uptime;
+    printf("Allocated %d blocks of %db in %f seconds. Avg: %f\n",
+            count, test_size, delta/1000., (delta/1000.)/count);
 
-        if (strcmp(argv[i], "-v") == 0) {
-            verbose = true;
-        } else
+    uptime = clock() / (CLOCKS_PER_SEC / 1000);
+    for(int i=0; i<count-1; i++) mem_free(list[i]);
+    uptime2 = clock() / (CLOCKS_PER_SEC / 1000);
+    delta = uptime2-uptime;
+    printf("Released  %d blocks of %db in %f seconds. Avg: %f\n",
+            count, test_size, delta/1000., (delta/1000.)/count);
 
-        if (strcmp(argv[i], "-d") == 0) {
-            dumps = true;
-        }
-    }
+}
 
-    if ((0 == amount) || (1 >= argc)) {
-        printf("usage: ./alloc -m <amount> [-v] [-d]\n");
-        exit(0);
-    }
+void get_stats() {
+    // alloc_test(32);
+    alloc_test(512);
+    alloc_test(1024);
+    alloc_test(16*1024);
 }

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+
 #define BUSY_FLAG 1
 
 
@@ -19,6 +20,7 @@ struct alc_info
 
 extern bool verbose;
 extern bool dumps;
+extern bool stats;
 extern alc_info mi;
 
 
