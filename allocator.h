@@ -18,7 +18,7 @@ struct alc_info
 #define alc_info struct alc_info
 
 extern bool verbose;
-extern alc_info main_info;
+extern alc_info mi;
 
 
 //================================

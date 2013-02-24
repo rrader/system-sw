@@ -250,11 +250,20 @@ void mem_dump() {
     printf("state:\t          size:\t     prev_size:"
            "\t          addr:\t            hex:\n");
 
+    int effective = 0;
+    int count = 0;
+
     while (s < mi.amount) {
         h = mi.memory + s;
         printf("%5s\t%15d\t%15d\t%15d\t%15Xh\n",
                (h->flags & BUSY_FLAG)?"B":"F", h->size, h->prev_size, s, s);
         s += h->size + size_h;
+
+        effective += h->size;
+        count ++;
     }
+
+    printf("Effective memory: %d - %f%%\n", effective, (effective/(float)(mi.amount))*100);
+    printf("Block count: %d\n", count);
 }
 
