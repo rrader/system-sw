@@ -22,7 +22,40 @@ int main(int argc, char *argv[]) {
 
     alc_init(amount, page);
     printf("\n");
-    mem_alloc(15);
+
+
+    void *x;
+    for (int i=0; i<=200; i++) {
+        if (i%2 == 0) {
+            x = mem_alloc(i);
+        } else {
+            mem_free(x);
+        }
+    }
+    // mem_alloc(17);
+
+    // mem_alloc(15);
+    // mem_alloc(15);
+    // mem_alloc(15);
+    // mem_alloc(15);
+    // mem_alloc(15);
+    // mem_alloc(15);
+    // mem_alloc(200);
+    // mem_alloc(200);
+    // mem_alloc(200);
+    // mem_alloc(200);
+    // void *x=mem_alloc(200);
+    // mem_free(x);
+    // mem_alloc(200);
+    // mem_free(x);
+    // mem_alloc(200);
+    // mem_alloc(200);
+    // mem_alloc(200);
+    // mem_alloc(200);
+    // mem_alloc(200);
+    // void *x = mem_alloc(200);
+    // mem_free(x);
+    
     // mem_alloc(15);
     // mem_alloc(15);
     mem_dump();
