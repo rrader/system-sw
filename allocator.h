@@ -10,20 +10,11 @@
 #define BUSY_FLAG 1
 
 
-struct alc_info
-{
-    size_t amount;
-    void *memory;
-
-};
-#define alc_info struct alc_info
-
 extern bool verbose;
-extern alc_info mi;
 
 
 //================================
-alc_info alc_init(size_t amount);
+void alc_init(size_t amount, size_t page);
 
 void *mem_alloc(size_t size);
 void *mem_realloc(void *addr, size_t size);

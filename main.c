@@ -5,6 +5,7 @@
 
 
 size_t amount = 0;
+size_t page = 0;
 bool verbose = false;
 // char cs_base = 230;
 // bool dumps = false;
@@ -19,18 +20,13 @@ int main(int argc, char *argv[]) {
     srand(time(NULL));
     read_args(argc, argv);
 
-    alc_init(amount);
+    alc_init(amount, page);
     printf("\n");
+    mem_alloc(15);
+    // mem_alloc(15);
+    // mem_alloc(15);
     mem_dump();
-    // printf("\n");
-
-    // if (test) {
-    //     test_mem();
-    // }
-
-    // if (stats) {
-    //     get_stats();
-    // }
+    // printf("%d\n", );
 }
 
 void read_args(int argc, char *argv[]) {
@@ -40,25 +36,18 @@ void read_args(int argc, char *argv[]) {
             i++;
         } else
 
+        if (strcmp(argv[i], "-p") == 0) {
+            page = atoi(argv[i+1]);
+            i++;
+        } else
+
         if (strcmp(argv[i], "-v") == 0) {
             verbose = true;
-        }// else
-
-        // if (strcmp(argv[i], "-d") == 0) {
-        //     dumps = true;
-        // } else
-
-        // if (strcmp(argv[i], "-s") == 0) {
-        //     stats = true;
-        // }
-
-        // if (strcmp(argv[i], "-t") == 0) {
-        //     test = true;
-        // }
+        }
     }
 
     if ((0 == amount) || (1 >= argc)) {
-        printf("usage: ./alloc -m <amount> [-v] [-d] [-s] [-t]\n");
+        printf("usage: ./alloc -m <amount> -p <pagesize> [-v]\n");
         // printf("\n -m [MEMORY]\tmemory amount\n -v\t\tverbose output\n -d\t\tprint dumps\n -s\t\tstatistics\n -t\t\tdo tests\n\n");
         exit(0);
     }
