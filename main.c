@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 
 
     void *x;
-    for (int i=0; i<=200; i++) {
+    for (int i=0; i<200; i++) {
         if (i%2 == 0) {
             x = mem_alloc(i);
         } else {

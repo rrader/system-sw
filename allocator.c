@@ -175,12 +175,11 @@ void *mem_alloc(size_t size_in) {
             printf("Class %d exists\n", class);
             page = mi.classes[class];
         }
+        if (!page) return NULL;
 
         void *ret = page->block;
 
-        // printf("Return block \t%X\n", ret);
         page->block = *(int**)(page->block);
-        // printf("New first \t%X\n", page->block);
         page->free_count --;
         if (!page->block) {
             printf("page %d is busy now\n", page->index);
@@ -246,6 +245,7 @@ void mem_free(void *addr) {
         d->block = addr;
         d->index = page_id;
         d->class = mi.page_classes[page_id];
+        d->next = d->prev = NULL;
         *(void**)addr = NULL;
         append_page_to_class(d->class, d);
         mi.descriptors[page_id] = d;
