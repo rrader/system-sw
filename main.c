@@ -24,23 +24,25 @@ int main(int argc, char *argv[]) {
     printf("\n");
 
 
-    void *x;
-    for (int i=0; i<200; i++) {
-        if (i%2 == 0) {
-            x = mem_alloc(i);
-        } else {
-            mem_free(x);
-        }
-    }
-    // mem_alloc(17);
+    // void *x;
+    // for (int i=0; i<200; i++) {
+    //     if (i%3 == 0) {
+    //         x = mem_alloc(i);
+    //     } else {
+    //         if (x)
+    //             mem_free(x);
+    //     }
+    // }
+    void* x = mem_alloc(17);
 
+    void* y = mem_alloc(15);
     // mem_alloc(15);
     // mem_alloc(15);
     // mem_alloc(15);
     // mem_alloc(15);
     // mem_alloc(15);
-    // mem_alloc(15);
-    // mem_alloc(200);
+    void* z = mem_alloc(200);
+    mem_realloc(z, 100);
     // mem_alloc(200);
     // mem_alloc(200);
     // mem_alloc(200);

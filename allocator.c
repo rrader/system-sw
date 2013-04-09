@@ -7,6 +7,7 @@
 
 #define ceil_4(i) ((i & ~3) + ((i & 3)?4:0))
 #define floor_4(i) (i & ~3)
+#define min(a,b) (((a)>(b))?(b):(a));
 #define STATE_BUSY (descriptor*)-1
 #define STATE_FREE (descriptor*)0
 #define EMPTY_CLASS (descriptor*)0
@@ -203,8 +204,12 @@ void *mem_alloc(size_t size_in) {
 }
 
 void *mem_realloc(void *addr, size_t size) {
-
-    return NULL;
+    void *new = mem_alloc(size);
+    if (!new) return NULL;
+    int copy_size = min(pow(2,mi.descriptors[PAGE_OF_ADDR(addr)]->class), size);
+    memcpy(new, addr, copy_size);
+    mem_free(addr);
+    return new;
 }
 
 void free_page(int page_id) {
