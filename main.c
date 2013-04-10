@@ -12,8 +12,8 @@ void read_args(int argc, char *argv[]);
 void test_mem();
 void get_stats();
 
-#define N 10
-#define max_size 1000
+#define N 100
+#define max_size 5000
 void *list[N];
 int sizes[N];
 int checksums[N];
@@ -57,9 +57,7 @@ int main(int argc, char *argv[]) {
                 }
             }
         } else {
-            // if (i%2) continue;
             printf("alloc %d\n", new_size);
-            // mem_dump();
             void *a = mem_alloc(new_size);
             printf("list[%d] = %X\n", id, a);
             list[id] = a;
@@ -92,7 +90,6 @@ void read_args(int argc, char *argv[]) {
 
     if ((0 == amount) || (1 >= argc)) {
         printf("usage: ./alloc -m <amount> -p <pagesize> [-v]\n");
-        // printf("\n -m [MEMORY]\tmemory amount\n -v\t\tverbose output\n -d\t\tprint dumps\n -s\t\tstatistics\n -t\t\tdo tests\n\n");
         exit(0);
     }
 }

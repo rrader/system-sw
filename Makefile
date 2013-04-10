@@ -7,7 +7,7 @@ clean:
 	rm -f alloc *.o
 
 execv: alloc
-	./alloc -m $$((1024*20)) -p 1024 -v
+	./alloc -m $$((1024*100)) -p 1024 -v
 
 exec: alloc
-	./alloc -m $$((1024*20)) -p 1024 # -v
+	./alloc -m $$((1024*100)) -p 1024 # -v
