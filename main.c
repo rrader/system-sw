@@ -16,6 +16,7 @@ void test_mem();
 void get_stats();
 
 int main(int argc, char *argv[]) {
+    srand(time(NULL));
     read_args(argc, argv);
 
     alc_init(amount);
@@ -57,35 +58,41 @@ void read_args(int argc, char *argv[]) {
     }
 
     if ((0 == amount) || (1 >= argc)) {
-        printf("usage: ./alloc -m <amount> [-v] [-d]\n");
+        printf("usage: ./alloc -m <amount> [-v] [-d] [-s] [-t]\n");
+        printf("\n -m [MEMORY]\tmemory amount\n -v\t\tverbose output\n -d\t\tprint dumps\n -s\t\tstatistics\n -t\t\tdo tests\n\n");
         exit(0);
     }
 }
 
 
 void test_mem() {
-    int test_size = 32;
+    int test_size = 2;
     void* list[amount/test_size];
     int list_cs[amount/test_size];
+    int list_sizes[amount/test_size];
 
     int count = 0;
     void *p;
 
-    while ((p = mem_alloc(test_size))) {
+    int block_size = rand() % 100 + test_size;
+    for(int i=0;i<rand()%20; i++) {
+        p = mem_alloc(block_size);
         // printf("%d\n", p - mi.memory);
         char cs = cs_base;
         char value;
-        for (int i=0; i<test_size; i++) {
+        for (int i=0; i<block_size; i++) {
             value = rand() % 255;
             *(char*)(p+i) = value;
             cs ^= value;
         }
+        list_sizes[count] = block_size;
         list_cs[count] = cs;
         list[count++] = p;
+        block_size = rand() % 100 + test_size;
     }
     mem_dump();
     // count --;
-    printf("Allocated %d blocks of %d b\n", count, test_size);
+    printf("Allocated %d blocks of %d..%d b\n", count, test_size, test_size+100);
 
 
 //CHECK CS
@@ -93,7 +100,7 @@ void test_mem() {
 
     for(int i=0; i<count; i++) {
         char cs = cs_base;
-        for (int j=0; j<test_size; j++) {
+        for (int j=0; j<list_sizes[i]; j++) {
             cs ^= *((char*)(list[i]+j));
         }
         cs_check = cs_check && (cs == list_cs[i]);
@@ -105,17 +112,24 @@ void test_mem() {
 
 //REALLOC
     int count2 = 0;
-    int test_size2 = 15;
+    // int test_size2 = 16;
     for(int i=0; i<count; i++) {
-        void *p = mem_realloc(list[i], test_size2);
-        
+        block_size = rand() % 100 + test_size;
+        printf("%d\n", block_size);
+        void *p = mem_realloc(list[i], block_size);
+        if (!p) {
+            printf("NULL\n");
+            count2++;
+            continue;
+        }
         char cs = cs_base;
         char value;
-        for (int i=0; i<test_size2; i++) {
+        for (int i=0; i<block_size; i++) {
             value = rand() % 255;
             *(char*)(p+i) = value;
             cs ^= value;
         }
+        list_sizes[count2] = block_size;
         list_cs[count2] = cs;
         list[count2++] = p;
     }
@@ -125,9 +139,9 @@ void test_mem() {
 //CHECK CS
     cs_check = true;
 
-    for(int i=0; i<count; i++) {
+    for(int i=0; i<count2; i++) {
         char cs = cs_base;
-        for (int j=0; j<test_size2; j++) {
+        for (int j=0; j<list_sizes[i]; j++) {
             cs ^= *((char*)(list[i]+j));
         }
         cs_check = cs_check && (cs == list_cs[i]);

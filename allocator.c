@@ -93,7 +93,7 @@ void *mem_alloc(size_t size) {
             int ret_size = ceil_4(size);
 
             //is there space for free block?
-            if (h->size - ret_size > size_h) {
+            if (h->size - ret_size >= size_h) {
                 //free block next to new
                 int free_offset = offset + ret_size + size_h;
                 int free_size = h->size - ret_size - size_h;
@@ -184,7 +184,9 @@ void *mem_realloc(void *addr, size_t size) {
                                  prev_h->prev_size);
                 }
                 
-                return mi.memory + new_offset + size_h;
+                void *ret_addr = mi.memory + new_offset + size_h;
+                memmove(ret_addr, addr, size);
+                return ret_addr;
             }
 
             //both
@@ -205,12 +207,16 @@ void *mem_realloc(void *addr, size_t size) {
                              ret_size);
                 }
 
-                return mi.memory + OFFSET(prev_h) + size_h;
+                void *ret_addr = mi.memory + OFFSET(prev_h) + size_h;
+                memmove(ret_addr, addr, size);
+                return ret_addr;
             }
 
-
-            mem_free(addr);
-            return mem_alloc(size);
+            void *ret_addr = mem_alloc(size);
+            if (!ret_addr) return NULL;
+            memmove(ret_addr, addr, size);
+            memfree(addr);
+            return ret_addr;
         }
 
     } else {
