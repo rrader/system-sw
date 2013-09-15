@@ -45,15 +45,39 @@ int main(int argc, char *argv[]) {
         if (list[id]) {
             if (rand()%2) {
                 printf("free\n");
+                //check checksum
+                int cs = 0;
+                char *t = list[id];
+                for(int j=0; j<sizes[id]; j++) {
+                    cs ^= *(t + j);
+                }
+                if (cs != checksums[id]) {
+                    printf("ERROR CHECKSUM on step %d (%X and %X)\n", i, checksums[id], cs);
+                }
+
                 mem_free(list[id]);
                 list[id] = NULL;
             } else {
                 printf("realloc\n");
-                void* t = mem_realloc(list[id], new_size);
+                //check checksum
+                int cs = 0;
+                void *t = list[id];
+                for(int j=0; j<sizes[id]; j++) {
+                    cs ^= *((char*)t + j);
+                }
+                if (cs != checksums[id]) {
+                    printf("ERROR CHECKSUM on step %d (%X and %X)\n", i, checksums[id], cs);
+                }
+                t = mem_realloc(list[id], new_size);
+
                 if (t) {
                     list[id]=t;
-                    // calc_checksum(id);
                     sizes[id] = new_size;
+                    checksums[id] = 0;
+                    for(int j=0; j<new_size; j++) {
+                        *((char*)(t) + j) = rand()%256;
+                        checksums[id] ^= *((char*)(t) + j);
+                    }
                 }
             }
         } else {
@@ -61,8 +85,14 @@ int main(int argc, char *argv[]) {
             void *a = mem_alloc(new_size);
             printf("list[%d] = %X\n", id, a);
             list[id] = a;
-            if (list[id])
+            if (list[id]) {
                 sizes[id] = new_size;
+                checksums[id] = 0;
+                for(int j=0; j<new_size; j++) {
+                    *((char*)(a) + j) = rand()%256;
+                    checksums[id] ^= *((char*)(a) + j);
+                }
+            }
         }
     }
 

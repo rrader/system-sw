@@ -7,9 +7,6 @@
 #include <string.h>
 
 
-#define BUSY_FLAG 1
-
-
 extern bool verbose;
 
 

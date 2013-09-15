@@ -103,7 +103,6 @@ void append_page_to_class(int class, descriptor *d) {
         d->prev = last;
         LOG("class %d appended\n", class);
     }
-    LOG("TEST page_classes[%d] = %d\n", d->index, class);
     mi.page_classes[d->index] = class;
 }
 
@@ -161,7 +160,7 @@ descriptor *alloc_page(size_t size) {
             return mi.descriptors[i];
         }
     }
-    LOGs("NO FREE PAGE\n");
+    LOGs("ERROR: NO FREE PAGE\n");
     return NULL;
 }
 
@@ -194,7 +193,6 @@ void *mem_alloc(size_t size_in) {
             page = alloc_page(size);
         } else {
             LOG("Class %d exists\n", class);
-            mem_dump();
             page = mi.classes[class];
             printf("%X, %d\n", page, PAGE_OF_ADDR(page));
         }
@@ -235,7 +233,6 @@ void *mem_alloc(size_t size_in) {
             mi.page_classes[i] = -1;
         }
         mi.page_classes[page] = num;
-        LOG("NUMBER %d\n", num);
 
         return PAGE_ADDR(page);
     }
@@ -275,7 +272,6 @@ void mem_free(void *addr) {
     LOG("Free block from page %d\n", page_id);
 
     if (d == STATE_MULTIPAGE) {
-        //TODO:
         int page_num = mi.page_classes[page_id];
         LOG("free multipage block of size %d\n", page_num);
         for (int i=page_id; i<page_id + page_num; i++) {
@@ -289,14 +285,12 @@ void mem_free(void *addr) {
         d->block = addr;
 
         LOG("Page has %d/%d\n", d->free_count, MAX_PAGE_BLOCKS(d->class));
-        if (d->free_count >= MAX_PAGE_BLOCKS(d->class))
-            //empty page with delegated descriptor
-            free_page(page_id);
-
-        if ((d->free_count >= MAX_PAGE_BLOCKS(d->class)-1) &&
-            (PAGE_OF_ADDR(mi.descriptors[page_id]) == page_id))
+        if (//empty page with delegated descriptor
+            (d->free_count >= MAX_PAGE_BLOCKS(d->class)) ||
             //empty page with local descriptor
-            free_page(page_id);
+            ((d->free_count >= MAX_PAGE_BLOCKS(d->class)-1) &&
+            (PAGE_OF_ADDR(mi.descriptors[page_id]) == page_id)))
+                free_page(page_id);
 
     } else {
         LOGs("BUSY page => page with one block\n");
@@ -327,26 +321,26 @@ void mem_free(void *addr) {
 void mem_dump() {
     for(int i=0; i<mi.page_count; i++) {
         if (mi.descriptors[i] == STATE_FREE) {
-            LOGi("%d: free page\n", i);
+            LOGi("%3d: free page\n", i);
         } else
         if (mi.descriptors[i] == STATE_BUSY) {
-            LOGi("%d: busy page class %d\n", i, mi.page_classes[i]);
+            LOGi("%3d: busy page class %d\n", i, mi.page_classes[i]);
         } else
         if (mi.descriptors[i] == STATE_MULTIPAGE) {
             if (mi.page_classes[i] != -1)
-                LOGi("%d: multipage block of size %d\n", i, mi.page_classes[i]);
+                LOGi("%3d: multipage block of size %d\n", i, mi.page_classes[i]);
             else
-                LOGi("%d: multipage block (continuation)\n", i);
+                LOGi("%3d: multipage block (continuation)\n", i);
         } else {
-            LOGi("%d: page (%d free) class %d\n", i, mi.descriptors[i]->free_count, mi.page_classes[i]);
+            LOGi("%3d: page (%d free) class %d\n", i, mi.descriptors[i]->free_count, mi.page_classes[i]);
         }
 
     }
 
-    LOGsi("==================\n");
+    LOGsi("===========================\n");
 
     for(int i=0; i<mi.class_count; i++) {
-        LOGi("%d (%d B):", i, (int)pow(2, i));
+        LOGi("%3d: (%d B):", i, (int)pow(2, i));
         if (mi.classes[i] == EMPTY_CLASS) {
             LOGsi("empty class\n");
         } else {
