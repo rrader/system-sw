@@ -14,13 +14,18 @@ class Context(object):
             for c in tpl[0]:
                 self.matrix[node][c] = (tpl[1], action)
 
-    def empty_action(self, char):
+    def empty_action(self, char, context):
         pass
 
     def state(self, node, tpl):
         def _state(func):
-            _do_state = partial(func, context=self)
+            # _do_state = partial(func, context=self)
+            _do_state = func
+            # if type(tpls) is list:
+            #     for tpl in tpls:
             self.attach(node, tpl, _do_state)
+            # else:
+            #     self.attach(node, tpls, _do_state)
             return _do_state
         return _state
 
@@ -36,7 +41,7 @@ class Context(object):
                 target, action = self.matrix[state][val]
             else:
                 target, action = self.matrix[state][False]
-            action(val)
+            action(val, self)
             state = target
             val = yield
 

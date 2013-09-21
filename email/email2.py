@@ -26,34 +26,19 @@ def handler(char, context):
 
 cont.state_noaction(STATE_USER, ('@', STATE_DOMAIN))
 cont.state_noaction(STATE_USER, (False, STATE_OUT))
+cont.state_noaction(STATE_DOMAIN, (False, STATE_OUT))
 
 @cont.state(STATE_DOMAIN, (SMB_BEGIN, STATE_DOMAIN_CONT))
 def handler(char, context):
     context.domain = char
 
-cont.state_noaction(STATE_DOMAIN, (False, STATE_OUT))
-
 @cont.state(STATE_DOMAIN_CONT, (SMB_CONT, STATE_DOMAIN_CONT))
-def handler(char, context):
-    context.domain += char
-
-# TODO: merge to prev.
 @cont.state(STATE_DOMAIN_CONT, ('.', STATE_SUBDOMAIN))
-def handler(char, context):
-    context.domain += char
-
-@cont.state(STATE_DOMAIN_CONT, ('.', STATE_SUBDOMAIN))
-def handler(char, context):
-    context.domain += char
-
-@cont.state(STATE_DOMAIN_CONT, (False, STATE_OUT))
-def handler(char, context):
-    print email(context.username, context.domain)
-
 @cont.state(STATE_SUBDOMAIN, (SMB_BEGIN, STATE_DOMAIN_CONT))
 def handler(char, context):
     context.domain += char
 
+@cont.state(STATE_DOMAIN_CONT, (False, STATE_OUT))
 @cont.state(STATE_SUBDOMAIN, (False, STATE_OUT))
 def handler(char, context):
     print email(context.username, context.domain)
