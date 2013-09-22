@@ -62,9 +62,10 @@ cont.state_noaction(STATE_PROP_NAME_FINISHED, ('=', STATE_PROP_VALUE))
 # STATE_PROP_VALUE
 cont.state_noaction(STATE_PROP_VALUE, (string.whitespace, STATE_PROP_VALUE))
 @cont.state(STATE_PROP_VALUE, (SMB_BEGIN, STATE_PROP_VALUE_CONT))
-@cont.state(STATE_PROP_VALUE, ('"', STATE_PROP_VALUE_QUOTED))
 def handler(char, context):
     context.propval = char
+@cont.state(STATE_PROP_VALUE, ('"', STATE_PROP_VALUE_QUOTED))
+def handler(char, context):
     context.disable_triggers = True
 
 # STATE_PROP_VALUE_QUOTED
