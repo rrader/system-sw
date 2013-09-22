@@ -13,7 +13,6 @@ cont = Context()
 
 # STATE_OUT
 cont.state_noaction(STATE_OUT, (string.whitespace, STATE_OUT))
-cont.state_noaction(STATE_OUT, (False, STATE_OUT))
 @cont.state(STATE_OUT, (SMB_BEGIN, STATE_SECTION_NAME))
 def handler(char, context):
     context.sectionname = char

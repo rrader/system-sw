@@ -76,7 +76,7 @@ class Context(object):
                     self.machines[-1].send(c)
                 line = file_obj.readline()
                 n += 1
-            self.machines[-1].send('') # end
+            self.machines[-1].send('\n') # end
         except Exception, e:
             print "Syntax error on line %d:\n>> %s" % (n, e.message)
 
