@@ -59,7 +59,7 @@ class Context(object):
             else:
                 if False not in self.matrix[state]:
                     expected = ''.join(self.matrix[state])
-                    raise Exception("Wrong state %d '%s' \nExpected %s" % (state, repr(val), repr(expected)))
+                    raise Exception("[%d] Found '%s' but expected\n %s" % (state, repr(val), repr(expected)))
                 target, action = self.matrix[state][False]
             action(val, self)
             state = target

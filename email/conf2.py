@@ -97,7 +97,7 @@ cont.add_trigger('#', oneline, STATEOL_OUTSIDE)
 # STATE_PROP_VALUE_CONT
 @oneline.state(STATEOL_INSIDE, ('\n', STATEOL_OUTSIDE))
 def handler(char, context):
-    context.stop('\n')
+    context.stop(pushback='\n')
 oneline.state_noaction(STATEOL_INSIDE, (False, STATEOL_INSIDE))
 oneline.state_noaction(STATEOL_OUTSIDE, ('#', STATEOL_INSIDE))
 
@@ -109,7 +109,7 @@ cont.add_trigger('/', multiline, STATEML_OUTSIDE)
 multiline.state_noaction(STATEML_OUTSIDE, ('/', STATEML_PROB_INSIDE))
 @multiline.state(STATEML_PROB_INSIDE, (False, STATEML_PROB_INSIDE))
 def handler(char, context):
-    context.stop('/'+char)
+    context.stop(pushback='/'+char)
 multiline.state_noaction(STATEML_PROB_INSIDE, ('*', STATEML_INSIDE))
 multiline.state_noaction(STATEML_INSIDE, ('*', STATEML_PROB_OUTSIDE))
 multiline.state_noaction(STATEML_INSIDE, (False, STATEML_INSIDE))
