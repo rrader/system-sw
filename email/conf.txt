@@ -1,0 +1,6 @@
+credentials {
+	name = "/*P*/eter";
+/*	mail = "antigluk@gmailcom"; 
+}
+*
+*/}

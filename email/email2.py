@@ -16,21 +16,22 @@ class email(namedtuple('email', ['user', 'domain'])):
     def __str__(self):
         return "username[%s] at domain[%s]" % (self.user, self.domain)
 
+cont.state_noaction(STATE_OUT, (False, STATE_OUT))
 @cont.state(STATE_OUT, (SMB_BEGIN, STATE_USER))
 def handler(char, context):
     context.username = char
 
+cont.state_noaction(STATE_USER, ('@', STATE_DOMAIN))
+cont.state_noaction(STATE_USER, (False, STATE_OUT))
 @cont.state(STATE_USER, (SMB_CONT_USER, STATE_USER))
 def handler(char, context):
     context.username += char
 
-cont.state_noaction(STATE_USER, ('@', STATE_DOMAIN))
-cont.state_noaction(STATE_USER, (False, STATE_OUT))
-cont.state_noaction(STATE_DOMAIN, (False, STATE_OUT))
-
 @cont.state(STATE_DOMAIN, (SMB_BEGIN, STATE_DOMAIN_CONT))
 def handler(char, context):
     context.domain = char
+
+cont.state_noaction(STATE_DOMAIN, (False, STATE_OUT))
 
 @cont.state(STATE_DOMAIN_CONT, (SMB_CONT, STATE_DOMAIN_CONT))
 @cont.state(STATE_DOMAIN_CONT, ('.', STATE_SUBDOMAIN))
