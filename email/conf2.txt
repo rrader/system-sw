@@ -1,0 +1,10 @@
+credentials {
+	name = Peter1
+	#mail = "antigluk@gmailcom";
+}
+
+access {
+	/*sendmail = True;*/
+	readmail = False;
+}
+

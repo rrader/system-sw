@@ -107,13 +107,14 @@ cont.add_trigger('/', multiline, STATEML_OUTSIDE)
 
 # STATE_PROP_VALUE_CONT
 multiline.state_noaction(STATEML_OUTSIDE, ('/', STATEML_PROB_INSIDE))
-@multiline.state(STATEML_PROB_INSIDE, (False, STATEML_PROB_INSIDE))
+@multiline.state(STATEML_PROB_INSIDE, (False, STATEML_OUTSIDE))
 def handler(char, context):
     context.stop(pushback='/'+char)
 multiline.state_noaction(STATEML_PROB_INSIDE, ('*', STATEML_INSIDE))
 multiline.state_noaction(STATEML_INSIDE, ('*', STATEML_PROB_OUTSIDE))
 multiline.state_noaction(STATEML_INSIDE, (False, STATEML_INSIDE))
 multiline.state_noaction(STATEML_PROB_OUTSIDE, (False, STATEML_INSIDE))
+multiline.state_noaction(STATEML_PROB_OUTSIDE, ('*', STATEML_PROB_OUTSIDE))
 @multiline.state(STATEML_PROB_OUTSIDE, ('/', STATEML_OUTSIDE))
 def handler(char, context):
     context.stop()
