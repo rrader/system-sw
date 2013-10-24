@@ -1,9 +1,9 @@
 import random
 import itertools
 
-PHYSICAL_MEM = 512*1024*1024 # 512MB
-PAGE_SIZE = 16*1024*1024  # 16M
-VIRTUAL_MEM = 512*1024*1024 # 256M
+PHYSICAL_MEM = 512*1024*1024
+PAGE_SIZE = 16*1024*1024
+VIRTUAL_MEM = 1024*1024*1024
 PROCESS_PAGE_COUNT = VIRTUAL_MEM / PAGE_SIZE
 PHYSICAL_PAGE_COUNT = PHYSICAL_MEM / PAGE_SIZE
 
@@ -12,9 +12,9 @@ PROCESSES_INCREMENT = 10
 
 PROCESS_ALIVE_MEAN = 500
 PROCESS_ALIVE_VARIANCE = 150
-TIME = 1000
+TIME = 10000
 
-TIMER_TICK = 10
+TIMER_TICK = 50
 
 VALID_BIT = 1
 DIRTY_BIT = 2
@@ -92,13 +92,13 @@ class VM(object):
         timer = itertools.count(TIMER_TICK, -1)
         while len(self.processes) < MAX_PROCESS_COUNT+1:
             self.processes += [PCB(self, next(self.pid_counter), ) for i in range(PROCESSES_INCREMENT)]
-            for _ in xrange(TIME):
+            for _ in xrange(TIME/len(self.processes)):
                 for p in self.processes:
                     p.quant()
+                    self.reset_bits()
                 # if next(timer) < 0:
                     # self.reset_bits()
                     # timer = itertools.count(TIMER_TICK, -1)
-                self.reset_bits()
 
         print "="*80
 
@@ -188,9 +188,15 @@ def choice_nru(virtual_pages):
     vpid = random.choice(pick_list)['id']
     return vpid
 
+def choice_lru(virtual_pages):
+    lst = sorted([vpage for vpage in virtual_pages.values() if (vpage['flags'] & VALID_BIT)], key=lambda x: x['flags'], reverse=True)
+    category = lst[0]['flags']
+    pick_list = filter(lambda p: p['flags'] == category, lst)
+    vpid = random.choice(pick_list)['id']
+    return vpid
 
 
 if __name__ == '__main__':
-    model = VM(choice_nru)
+    model = VM(algorithm=choice_nru)
     model.start()
 
