@@ -1,9 +1,5 @@
-#include <linux/module.h>
-#include <linux/time.h>
-#include <linux/buffer_head.h>
 #include "ffs.h"
 
-#define FFS_MAGIC 0xBA0BAB
 #define FFS_ROOT_INO 1
 #define FFS_FSINFO_INO 2
 
@@ -29,6 +25,7 @@ static const struct super_operations ffs_sops = {
 
         // .show_options   = fat_show_options,
 };
+
 void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
 {
     struct va_format vaf;
@@ -41,11 +38,21 @@ void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
     va_end(args);
 }
 
+static int ffs_read_root(struct inode *inode)
+{
+    return 0;
+}
+
 static int ffs_fill_super(struct super_block *sb, void *data, int silent)
 {
     long error;
+    struct ffs_sb_info *sbi;
+    struct buffer_head *bh;
+    struct ffs_metainfo_sector *metainfo;
+    struct inode *fsinfo_inode = 0, *root_inode = 0;
+    printk(KERN_DEBUG "ffs_fill_super\n");
     /* filesystem information */
-    ffs_sb_info *sbi = kzalloc(sizeof(struct ffs_sb_info), GFP_KERNEL);
+    sbi = kzalloc(sizeof(struct ffs_sb_info), GFP_KERNEL);
     if (!sbi)
         return -ENOMEM;
 
@@ -56,15 +63,19 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     sb->s_flags |= MS_NODIRATIME | MS_NOATIME;  // no modification time
 
     // read second block (first for boot sector)
-    sb_min_blocksize(sb, 512);
-    struct buffer_head *bh = sb_bread(sb, 1);
+    printk(KERN_DEBUG "reading info block\n");
+    sb_min_blocksize(sb, FFS_BLOCK_SIZE);
+    bh = sb_bread(sb, 1);
     // read metainfo to superblock-info
-    ffs_metainfo_sector metainfo = (struct ffs_metainfo_sector *) bh->b_data;
+    metainfo = (struct ffs_metainfo_sector *) bh->b_data;
 
-    if (metainfo->magic == FFS_MAGIC) {
-            kernel_msg(sb, KERN_ERR, "Invalid filesystem (incorrect magic)");
-            brelse(bh);
-            goto out_fail;
+    if (metainfo->magic != cpu_to_le32(FFS_MAGIC)) {
+        kernel_msg(sb, KERN_ERR, "Invalid filesystem (incorrect magic)");
+        kernel_msg(sb, KERN_DEBUG, "magic: %X (required %X)", metainfo->magic, cpu_to_le32(FFS_MAGIC));
+        brelse(bh);
+        goto out_fail;
+    } else {
+        kernel_msg(sb, KERN_DEBUG, "magic: OK", metainfo->magic, cpu_to_le32(FFS_MAGIC));
     }
 
     sb_set_blocksize(sb, metainfo->block_size);
@@ -73,36 +84,38 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     brelse(bh);
 
     // fill initial state of fs
-
-    struct inode *fsinfo_inode = new_inode(sb);
+    fsinfo_inode = new_inode(sb);
     if (!fsinfo_inode)
         return -ENOMEM; 
     fsinfo_inode->i_ino = FFS_ROOT_INO;
     insert_inode_hash(fsinfo_inode);
 
-    struct inode *root_inode = new_inode(sb);
+    root_inode = new_inode(sb);
     if (!root_inode)
         return -ENOMEM; 
     root_inode->i_ino = FFS_ROOT_INO;
+    root_inode->i_version = 1;
+    root_inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUSR;
     error = ffs_read_root(root_inode);
     if (error < 0) {
         iput(root_inode);
         goto out_fail;
     }
     insert_inode_hash(root_inode);
-    ffs_attach(root_inode, 0);
+    //ffs_attach(root_inode, 0);
     sb->s_root = d_make_root(root_inode);
     if (!sb->s_root) {
         kernel_msg(sb, KERN_ERR, "get root inode failed");
         goto out_fail;
     }
+    printk(KERN_DEBUG "superblock generated\n");
     return 0;
 
 out_fail:
         if (fsinfo_inode)
                 iput(fsinfo_inode);
-        if (fat_inode)
-                iput(fat_inode);
+        if (root_inode)
+                iput(root_inode);
         sb->s_fs_info = NULL;
         kfree(sbi);
         return error;
@@ -120,7 +133,7 @@ static struct file_system_type ffs_fs_type = {
         .name           = "ffs",
         .mount          = ffs_mount,
         .kill_sb        = kill_block_super,
-        .fs_flags       = FS_REQUIRES_DEV,
+        // .fs_flags       = FS_REQUIRES_DEV,
 };
 MODULE_ALIAS_FS("ffs");
 
