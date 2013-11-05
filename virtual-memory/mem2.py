@@ -78,6 +78,7 @@ class VM(object):
         self.choice_algorithm = algorithm
         self.pf = 0
         self.accesses = 0
+        self.counter = 0
 
     def start(self):
         print "Starting model:"
@@ -95,7 +96,10 @@ class VM(object):
             for _ in xrange(TIME/len(self.processes)):
                 for p in self.processes:
                     p.quant()
-                    self.reset_bits()
+                    self.counter += 1
+                    if self.counter >= TIMER_TICK:
+                        self.reset_all_bits()
+                        self.counter = 0
 
         print "="*80
 
@@ -115,6 +119,11 @@ class VM(object):
                 page['flags'] &= ~DIRTY_BIT
                 page['countdown'] = TIMER_TICK
 
+    def reset_all_bits(self):
+        for i in [vpage['id'] for vpage in self.virtual_pages.values() if vpage['flags'] & VALID_BIT]:
+            page = self.virtual_pages[i]
+            page['flags'] &= ~ACCESS_BIT
+            page['flags'] &= ~DIRTY_BIT
 
     def request_page(self, pid, fs=False):
         print "{%d} requested new page" % pid
