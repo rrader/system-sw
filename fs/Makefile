@@ -1,3 +1,4 @@
+# make && sudo make reload && sudo mount -o loop -t ffs mkfs.ffs/img /mnt
 
 obj-m += ffs.o 
 

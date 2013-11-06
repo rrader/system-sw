@@ -3,6 +3,36 @@
 #define FFS_ROOT_INO 1
 #define FFS_FSINFO_INO 2
 
+static unsigned int last_ino = 3;
+
+struct inode *user_file_inode;
+
+// struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags) {
+//     // struct super_block *sb = parent_inode->i_sb;
+//     // struct ffs_sb_info *sbi = sb->s_fs_info;
+//     // printk(KERN_DEBUG "lookup...\n");
+//     if (parent_inode->i_ino != FFS_ROOT_INO)
+//         return ERR_PTR(-ENOENT);
+
+//     d_add(dentry, user_file_inode);
+//     return NULL;
+// }
+
+int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
+    int err;
+    struct dentry *de = file->f_dentry;
+
+    printk( "ffs: file_operations.readdir called\n" );
+    if(file->f_pos > 0 )
+        return 1;
+    if(filldir(dirent, ".", 1, file->f_pos++, de->d_inode->i_ino, DT_DIR)||
+       (filldir(dirent, "..", 2, file->f_pos++, de->d_parent->d_inode->i_ino, DT_DIR)))
+        return 0;
+    if(filldir(dirent, "hello.txt", 9, file->f_pos++, FILE_INODE_NUMBER, DT_REG ))
+        return 0;
+    return 1;
+}
+
 static const struct inode_operations ffs_dir_inode_operations = {
         // .create         = ffs_create,
         // .lookup         = ffs_lookup,
@@ -12,6 +42,17 @@ static const struct inode_operations ffs_dir_inode_operations = {
         // .rename         = ffs_rename,
         // .setattr        = ffs_setattr,
         // .getattr        = ffs_getattr,
+};
+
+struct file_operations ffs_file_fops = {
+    // read : &rkfs_f_read,
+    // write: &rkfs_f_write
+    //    release: &rkfs_f_release
+};
+
+struct file_operations rkfs_dir_fops = {
+    read   : generic_read_dir,
+    readdir: &ffs_f_readdir
 };
 
 static const struct super_operations ffs_sops = {
@@ -38,8 +79,28 @@ void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
     va_end(args);
 }
 
+// ssize_t ffs_f_read( struct file *file, char *buf, size_t max, loff_t *offset ) {
+//     int i;
+//     int buflen;
+//     if(*offset > 0)
+//         return 0;
+//     printk( "rkfs: file_operations.read called %d %d\n", max, *offset );
+//     buflen = file_size > max ? max : file_size;
+//     __generic_copy_to_user(buf, file_buf, buflen);
+//     //           copy_to_user(buf, file_buf, buflen);
+//     *offset += buflen; // advance the offset
+//     return buflen;
+// }
+
 static int ffs_read_root(struct inode *inode)
 {
+    struct super_block *sb = inode->i_sb;
+    printk(KERN_DEBUG "ffs_read_root\n");
+    user_file_inode = new_inode(sb);
+    user_file_inode->i_ino = last_ino++;
+    // user_file_inode->i_size = 6;
+    user_file_inode->i_mode = S_IFREG; //|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH;
+    // user_file_inode->i_fop = &ffs_file_fops;
     return 0;
 }
 
@@ -87,7 +148,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     fsinfo_inode = new_inode(sb);
     if (!fsinfo_inode)
         return -ENOMEM; 
-    fsinfo_inode->i_ino = FFS_ROOT_INO;
+    fsinfo_inode->i_ino = FFS_FSINFO_INO;
     insert_inode_hash(fsinfo_inode);
 
     root_inode = new_inode(sb);
@@ -96,6 +157,8 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     root_inode->i_ino = FFS_ROOT_INO;
     root_inode->i_version = 1;
     root_inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUSR;
+    root_inode->i_op = &ffs_dir_inode_operations;
+    root_inode->i_fop = &simple_dir_operations;
     error = ffs_read_root(root_inode);
     if (error < 0) {
         iput(root_inode);
