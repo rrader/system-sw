@@ -7,16 +7,16 @@ static unsigned int last_ino = 3;
 
 struct inode *user_file_inode;
 
-// struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags) {
-//     // struct super_block *sb = parent_inode->i_sb;
-//     // struct ffs_sb_info *sbi = sb->s_fs_info;
-//     // printk(KERN_DEBUG "lookup...\n");
-//     if (parent_inode->i_ino != FFS_ROOT_INO)
-//         return ERR_PTR(-ENOENT);
+struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags) {
+    // struct super_block *sb = parent_inode->i_sb;
+    // struct ffs_sb_info *sbi = sb->s_fs_info;
+    // printk(KERN_DEBUG "lookup...\n");
+    if (parent_inode->i_ino != FFS_ROOT_INO)
+        return ERR_PTR(-ENOENT);
 
-//     d_add(dentry, user_file_inode);
-//     return NULL;
-// }
+    d_add(dentry, user_file_inode);
+    return NULL;
+}
 
 int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     int err;
@@ -28,14 +28,14 @@ int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     if(filldir(dirent, ".", 1, file->f_pos++, de->d_inode->i_ino, DT_DIR)||
        (filldir(dirent, "..", 2, file->f_pos++, de->d_parent->d_inode->i_ino, DT_DIR)))
         return 0;
-    if(filldir(dirent, "hello.txt", 9, file->f_pos++, FILE_INODE_NUMBER, DT_REG ))
+    if(filldir(dirent, "hello.txt", 9, file->f_pos++, user_file_inode->i_ino, DT_REG ))
         return 0;
     return 1;
 }
 
 static const struct inode_operations ffs_dir_inode_operations = {
         // .create         = ffs_create,
-        // .lookup         = ffs_lookup,
+        .lookup         = ffs_lookup,
         // .unlink         = ffs_unlink,
         // .mkdir          = ffs_mkdir,
         // .rmdir          = ffs_rmdir,
@@ -50,7 +50,7 @@ struct file_operations ffs_file_fops = {
     //    release: &rkfs_f_release
 };
 
-struct file_operations rkfs_dir_fops = {
+struct file_operations ffs_dir_fops = {
     read   : generic_read_dir,
     readdir: &ffs_f_readdir
 };
@@ -158,7 +158,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     root_inode->i_version = 1;
     root_inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUSR;
     root_inode->i_op = &ffs_dir_inode_operations;
-    root_inode->i_fop = &simple_dir_operations;
+    root_inode->i_fop = &ffs_dir_fops;
     error = ffs_read_root(root_inode);
     if (error < 0) {
         iput(root_inode);
