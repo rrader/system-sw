@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
     write(fd, &info, sizeof(info));
 
     lseek(fd, FFS_BLOCK_SIZE*1, SEEK_SET);  // blocks bitmap
-    int c = service_blocks + 1; //FIXME: +1 for test file
+    int c = service_blocks + 2; //FIXME: +1 for test file
     char b = 0;
 
     while (c) {
@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
 
     lseek(fd, FFS_BLOCK_SIZE*(info.b_bm_blocks), SEEK_SET);  // fd bitmap
     // empty for now
-    b = BIT_MASK(1);  // FIXME: one file
+    b = BIT_MASK(2);  // FIXME: one file
     write(fd, &b, sizeof(b));
 
     lseek(fd, FFS_BLOCK_SIZE*(info.b_bm_blocks+info.fd_bm_blocks), SEEK_SET);  // fd list
@@ -105,6 +105,13 @@ int main(int argc, char* argv[]) {
     file.link_count = 1;
     file.file_size = 0;
     strcpy(file.filename, "hello.txt");
+    write(fd, &file, sizeof(struct ffs_fd));
+
+    file.type = FFS_REG;
+    file.datablock_id = service_blocks+1;
+    file.link_count = 1;
+    file.file_size = 0;
+    strcpy(file.filename, "world.txt");
     write(fd, &file, sizeof(struct ffs_fd));
 
     printf("OK\n");

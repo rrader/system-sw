@@ -7,6 +7,7 @@
 unsigned int last_ino = 3;
 
 // struct inode *user_file_inode;
+struct inode *root_inode = 0;
 static struct kmem_cache *ffs_inode_cachep;
 
 void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
@@ -31,16 +32,22 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
     struct ffs_sb_info *sbi = sb->s_fs_info;
     struct hlist_head *head = &sbi->inodes;
     struct ffs_inode_info *i;
-    struct inode *i_inode;
-    // struct ffs_sb_info *sbi = sb->s_fs_info;
-    kernel_msg(sb, KERN_DEBUG, "lookup...");
+    struct inode *i_inode = 0;
+
+    kernel_msg(sb, KERN_DEBUG, "lookup... %s", dentry->d_name.name);
     if (parent_inode->i_ino != FFS_ROOT_INO)
         return ERR_PTR(-ENOENT);
 
     hlist_for_each_entry(i, head, list_node) {
-        i_inode = &i->vfs_inode;
-        d_add(dentry, i_inode);
+        kernel_msg(sb, KERN_DEBUG, "file[%d] %s", i->vfs_inode.i_ino, FFS_I(&i->vfs_inode)->fd.filename);
+        // d_add(dentry, &i->vfs_inode);
+        if (strcmp(FFS_I(&i->vfs_inode)->fd.filename, dentry->d_name.name) == 0)
+            i_inode = &i->vfs_inode;
     }
+    if (i_inode)
+        d_add(dentry, i_inode);
+    else
+        return ERR_PTR(-ENOENT);
     return NULL;
 }
 
@@ -147,7 +154,6 @@ static int ffs_read_root(struct inode *inode)
     int fd_per_block = FFS_BLOCK_SIZE / sizeof(struct ffs_fd);
     struct ffs_fd *fd;
     struct inode *new_inode;
-    struct ffs_inode_info *in;
     kernel_msg(sb, KERN_DEBUG, "ffs_read_root");
     
     //read from b_bm_blocks block file descriptors bitmask
@@ -214,7 +220,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     struct ffs_sb_info *sbi;
     struct buffer_head *bh;
     struct ffs_metainfo_sector *metainfo;
-    struct inode *fsinfo_inode = 0, *root_inode = 0;
+    struct inode *fsinfo_inode = 0;
     kernel_msg(sb, KERN_DEBUG, "ffs_fill_super");
     /* filesystem information */
     sbi = kzalloc(sizeof(struct ffs_sb_info), GFP_KERNEL);
