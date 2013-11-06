@@ -82,7 +82,7 @@ static struct inode *ffs_alloc_inode(struct super_block *sb)
     ei->vfs_inode.i_sb = sb;
     kernel_msg(sb, KERN_DEBUG, "alloc inode");
     // ei->i_dir_start_lookup = 0;
-    rwlock_init(&ei->rwlock);
+    // rwlock_init(&ei->rwlock);
     return &ei->vfs_inode;
 }
 
@@ -117,11 +117,53 @@ static const struct super_operations ffs_sops = {
 //     return buflen;
 // }
 
+#define CHECK_BIT(bm, n) (*(char*)((char*)bm + ((n)/8)) & (char)(1 << (n % 8)))
 
 static int ffs_read_root(struct inode *inode)
 {
     struct super_block *sb = inode->i_sb;
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    int fd_bitmask_len;
+    struct buffer_head *bh;
+    int copied, b_id, i, j, to_copy, index;
+    int fd_per_block = FFS_BLOCK_SIZE / sizeof(struct ffs_fd);
+    struct ffs_fd *fd;
     kernel_msg(sb, KERN_DEBUG, "ffs_read_root");
+    
+    //read from b_bm_blocks block file descriptors bitmask
+    fd_bitmask_len = (sbi->max_file_count + 7) / 8;
+    sbi->fd_bitmask = kzalloc(fd_bitmask_len, GFP_KERNEL);
+    kernel_msg(sb, KERN_DEBUG, "bitmask: %d", fd_bitmask_len);
+    
+    b_id = sbi->b_bm_blocks;
+    kernel_msg(sb, KERN_DEBUG, "reading fd bitmap, block:%d", b_id);
+    copied = 0;
+    for(i=0; i<sbi->fd_bm_blocks; i++) {
+        bh = sb_bread(sb, b_id++);
+        to_copy = fd_bitmask_len - copied;
+        if (to_copy >= FFS_BLOCK_SIZE)
+            to_copy = FFS_BLOCK_SIZE;
+        memcpy(sbi->fd_bitmask + copied, bh->b_data, to_copy);
+        copied -= to_copy;
+    }
+
+    //read descriptors
+    index = 0;
+    b_id = sbi->b_bm_blocks + sbi->fd_bm_blocks;
+    for(i=0; i<sbi->fd_blocks; i++) {
+        bh = sb_bread(sb, b_id++);
+        fd = (struct ffs_fd *)bh->b_data;
+        for(j=0; j<fd_per_block; j++) {
+            if (index >= sbi->max_file_count) break;
+            if (CHECK_BIT(sbi->fd_bitmask, index)) {
+                kernel_msg(sb, KERN_DEBUG, "found %s file", fd->filename);
+            }
+            fd += 1;
+            index++;
+            // new_inode(sb);
+        }
+    }
+
     user_file_inode = new_inode(sb);
     user_file_inode->i_ino = last_ino++;
     // user_file_inode->i_size = 6;
@@ -149,10 +191,9 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     sb->s_op = &ffs_sops;
     sb->s_flags |= MS_NODIRATIME | MS_NOATIME;  // no modification time
 
-    // read second block (first for boot sector)
     kernel_msg(sb, KERN_DEBUG, "reading info block");
     sb_min_blocksize(sb, FFS_BLOCK_SIZE);
-    bh = sb_bread(sb, 1);
+    bh = sb_bread(sb, 0);
     // read metainfo to superblock-info
     metainfo = (struct ffs_metainfo_sector *) bh->b_data;
 
@@ -168,15 +209,13 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     sb_set_blocksize(sb, metainfo->block_size);
     sbi->block_count = metainfo->block_count;
     sbi->block_size = metainfo->block_size;
+    sbi->fd_blocks = metainfo->fd_blocks;
+    sbi->max_file_count = metainfo->max_file_count;
+    sbi->b_bm_blocks = metainfo->b_bm_blocks;
+    sbi->fd_bm_blocks = metainfo->fd_bm_blocks;
     brelse(bh);
 
     // fill initial state of fs
-    fsinfo_inode = new_inode(sb);
-    if (!fsinfo_inode)
-        return -ENOMEM; 
-    fsinfo_inode->i_ino = FFS_FSINFO_INO;
-    insert_inode_hash(fsinfo_inode);
-
     root_inode = new_inode(sb);
     if (!root_inode)
         return -ENOMEM; 

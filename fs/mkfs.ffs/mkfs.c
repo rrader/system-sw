@@ -4,7 +4,13 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+#include <limits.h>
+#include <string.h>
 #include "../const.h"
+
+#define BIT_MASK(x) \
+    (((x) >= sizeof(unsigned) * CHAR_BIT) ? \
+        (unsigned) -1 : (1U << (x)) - 1)
 
 int file_size(char *filename, unsigned long *size)
 {
@@ -51,12 +57,56 @@ int main(int argc, char* argv[]) {
     info.magic = FFS_MAGIC;
     info.block_count = size/FFS_BLOCK_SIZE;
     info.block_size = FFS_BLOCK_SIZE;
-    printf("magic: %X\n", info.magic);
     printf("block_count: %d\n", info.block_count);
     printf("block_size: %d\n", info.block_size);
 
-    lseek(fd, FFS_BLOCK_SIZE, SEEK_SET);
+    int b_bm_size = info.block_count >> 3; //blocks bitmask
+    info.b_bm_blocks = (b_bm_size + FFS_BLOCK_SIZE - 1) / FFS_BLOCK_SIZE;
+
+    info.max_file_count = (size*0.005) / sizeof(struct ffs_fd);
+    printf("file count: %d\n", info.max_file_count);
+    int fd_bm_size = (info.max_file_count + 7) / 8; //file descriptor bitmask
+    info.fd_bm_blocks = (fd_bm_size + FFS_BLOCK_SIZE - 1) / FFS_BLOCK_SIZE;
+
+    int fd_per_block = FFS_BLOCK_SIZE / sizeof(struct ffs_fd);
+    info.fd_blocks = (info.max_file_count+fd_per_block-1) / fd_per_block;
+    
+    int service_blocks = 1+info.b_bm_blocks+info.fd_bm_blocks+info.fd_blocks;
+    printf("service info: %d blocks (%1.1f%%)\n", service_blocks, ((float)(service_blocks)/info.block_count)*100);
+
+    lseek(fd, 0, SEEK_SET);  // file begin
     write(fd, &info, sizeof(info));
+
+    lseek(fd, FFS_BLOCK_SIZE*1, SEEK_SET);  // blocks bitmap
+    int c = service_blocks + 1; //FIXME: +1 for test file
+    char b = 0;
+
+    while (c) {
+        if (c >= CHAR_BIT) {
+            b = BIT_MASK(CHAR_BIT);
+            c -= CHAR_BIT;
+        } else {
+            b = BIT_MASK(c);
+            c -= c;
+        }
+        write(fd, &b, sizeof(b));
+    }
+
+    lseek(fd, FFS_BLOCK_SIZE*(info.b_bm_blocks), SEEK_SET);  // fd bitmap
+    // empty for now
+    b = BIT_MASK(1);  // FIXME: one file
+    write(fd, &b, sizeof(b));
+
+    lseek(fd, FFS_BLOCK_SIZE*(info.b_bm_blocks+info.fd_bm_blocks), SEEK_SET);  // fd list
+    // FIXME: empty
+    struct ffs_fd file;
+    file.type = FFS_REG;
+    file.datablock_id = service_blocks;
+    file.link_count = 1;
+    file.file_size = 0;
+    strcpy(file.filename, "hello.txt");
+    write(fd, &file, sizeof(struct ffs_fd));
+
     printf("OK\n");
     return 0;
 }
