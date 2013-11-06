@@ -2,10 +2,11 @@
 
 #define FFS_ROOT_INO 1
 #define FFS_FSINFO_INO 2
+#define FFS_USERFILES_OFFSET 10
 
 unsigned int last_ino = 3;
 
-struct inode *user_file_inode;
+// struct inode *user_file_inode;
 static struct kmem_cache *ffs_inode_cachep;
 
 void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
@@ -27,17 +28,28 @@ static inline struct ffs_inode_info *FFS_I(struct inode *inode)
 
 struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags) {
     struct super_block *sb = parent_inode->i_sb;
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    struct hlist_head *head = &sbi->inodes;
+    struct ffs_inode_info *i;
+    struct inode *i_inode;
     // struct ffs_sb_info *sbi = sb->s_fs_info;
     kernel_msg(sb, KERN_DEBUG, "lookup...");
     if (parent_inode->i_ino != FFS_ROOT_INO)
         return ERR_PTR(-ENOENT);
 
-    d_add(dentry, user_file_inode);
+    hlist_for_each_entry(i, head, list_node) {
+        i_inode = &i->vfs_inode;
+        d_add(dentry, i_inode);
+    }
     return NULL;
 }
 
 int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     struct dentry *de = file->f_dentry;
+    struct ffs_inode_info *i;
+    struct super_block *sb = de->d_inode->i_sb;
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    struct hlist_head *head = &sbi->inodes;
 
     kernel_msg(de->d_sb, KERN_DEBUG, "ffs: file_operations.readdir called");
     if(file->f_pos > 0 )
@@ -45,8 +57,11 @@ int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     if(filldir(dirent, ".", 1, file->f_pos++, de->d_inode->i_ino, DT_DIR)||
        (filldir(dirent, "..", 2, file->f_pos++, de->d_parent->d_inode->i_ino, DT_DIR)))
         return 0;
-    if(filldir(dirent, "hello.txt", 9, file->f_pos++, user_file_inode->i_ino, DT_REG ))
-        return 0;
+
+    hlist_for_each_entry(i, head, list_node) {
+        if(filldir(dirent, i->fd.filename, FFS_FILENAME_LENGTH, file->f_pos++, i->vfs_inode.i_ino, DT_REG))
+            return 0;
+    }
     return 1;
 }
 
@@ -79,10 +94,13 @@ static struct inode *ffs_alloc_inode(struct super_block *sb)
     ei = (struct ffs_inode_info *)kmem_cache_alloc(ffs_inode_cachep, GFP_KERNEL);
     if (!ei)
             return NULL;
+    inode_init_always(sb, &ei->vfs_inode);
     ei->vfs_inode.i_sb = sb;
     kernel_msg(sb, KERN_DEBUG, "alloc inode");
     // ei->i_dir_start_lookup = 0;
+    ei->vfs_inode.i_state = 0;
     // rwlock_init(&ei->rwlock);
+    insert_inode_hash(&ei->vfs_inode);
     return &ei->vfs_inode;
 }
 
@@ -128,6 +146,8 @@ static int ffs_read_root(struct inode *inode)
     int copied, b_id, i, j, to_copy, index;
     int fd_per_block = FFS_BLOCK_SIZE / sizeof(struct ffs_fd);
     struct ffs_fd *fd;
+    struct inode *new_inode;
+    struct ffs_inode_info *in;
     kernel_msg(sb, KERN_DEBUG, "ffs_read_root");
     
     //read from b_bm_blocks block file descriptors bitmask
@@ -157,6 +177,17 @@ static int ffs_read_root(struct inode *inode)
             if (index >= sbi->max_file_count) break;
             if (CHECK_BIT(sbi->fd_bitmask, index)) {
                 kernel_msg(sb, KERN_DEBUG, "found %s file", fd->filename);
+                new_inode = ffs_alloc_inode(sb);
+                new_inode->i_ino = FFS_USERFILES_OFFSET + index;
+                new_inode->i_size = fd->file_size;
+                if (fd->type == FFS_REG) {
+                    kernel_msg(sb, KERN_DEBUG, "(is regular file)");
+                    new_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH;
+                } else; // directory
+                new_inode->i_fop = &ffs_file_fops;
+                strcpy(FFS_I(new_inode)->fd.filename, fd->filename);
+
+                hlist_add_head(&FFS_I(new_inode)->list_node, &sbi->inodes);
             }
             fd += 1;
             index++;
@@ -164,11 +195,16 @@ static int ffs_read_root(struct inode *inode)
         }
     }
 
-    user_file_inode = new_inode(sb);
-    user_file_inode->i_ino = last_ino++;
-    // user_file_inode->i_size = 6;
-    user_file_inode->i_mode = S_IFREG; //|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH;
-    // user_file_inode->i_fop = &ffs_file_fops;
+
+    // hlist_for_each_entry(in, &sbi->inodes, list_node) {
+    //     kernel_msg(sb, KERN_DEBUG, "inode of %s file", in->fd.filename);
+    // }
+
+    // user_file_inode = new_inode(sb);
+    // user_file_inode->i_ino = last_ino++;
+    // // user_file_inode->i_size = 6;
+    // user_file_inode->i_mode = S_IFREG; //|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH;
+    // // user_file_inode->i_fop = &ffs_file_fops;
     return 0;
 }
 
@@ -214,6 +250,8 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     sbi->b_bm_blocks = metainfo->b_bm_blocks;
     sbi->fd_bm_blocks = metainfo->fd_bm_blocks;
     brelse(bh);
+
+    INIT_HLIST_HEAD(&sbi->inodes);
 
     // fill initial state of fs
     root_inode = new_inode(sb);

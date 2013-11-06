@@ -3,6 +3,7 @@
 
 #define FFS_MAGIC 0xBA0BAB00
 #define FFS_BLOCK_SIZE 512
+#define FFS_FILENAME_LENGTH 10
 
 struct ffs_metainfo_sector {
     unsigned int magic;
@@ -17,7 +18,7 @@ struct ffs_metainfo_sector {
 enum ffs_file_type {FFS_REG, FFS_DIR, FFS_LINK};
 
 struct ffs_fd { // file descriptor
-	char filename[10];
+	char filename[FFS_FILENAME_LENGTH];
 	unsigned int type;
 	unsigned int datablock_id;  // block with list of file blocks
 	unsigned int link_count;

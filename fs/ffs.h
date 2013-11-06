@@ -20,6 +20,7 @@ struct ffs_sb_info {
 
     char* b_bitmask;
     char* fd_bitmask;
+    struct hlist_head inodes;
 };
 
 struct ffs_inode_info {
@@ -40,6 +41,7 @@ struct ffs_inode_info {
     // rwlock_t rwlock;
     struct inode vfs_inode;
     struct ffs_fd fd;
+    struct hlist_node list_node;
     // struct buffer_head *bh;
 };
 
