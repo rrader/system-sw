@@ -1,0 +1,6 @@
+.*
+Module.symvers
+*.ko
+*.mod.c
+mkfs.ffs/img
+modules.order

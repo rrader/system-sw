@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     int fd;
     unsigned long size;
 
-	printf("\nmkfs.ffs\n============================\n");
+    printf("\nmkfs.ffs\n============================\n");
 
     if (argc < 2) {
         fprintf(stderr, "%s filename\n", argv[0]);
@@ -48,15 +48,15 @@ int main(int argc, char* argv[]) {
 
     fd = open(filename, O_RDWR);
     struct ffs_metainfo_sector info;
-	info.magic = FFS_MAGIC;
-	info.block_count = size/FFS_BLOCK_SIZE;
-	info.block_size = FFS_BLOCK_SIZE;
-	printf("magic: %X\n", info.magic);
-	printf("block_count: %d\n", info.block_count);
-	printf("block_size: %d\n", info.block_size);
+    info.magic = FFS_MAGIC;
+    info.block_count = size/FFS_BLOCK_SIZE;
+    info.block_size = FFS_BLOCK_SIZE;
+    printf("magic: %X\n", info.magic);
+    printf("block_count: %d\n", info.block_count);
+    printf("block_size: %d\n", info.block_size);
 
-	lseek(fd, FFS_BLOCK_SIZE, SEEK_SET);
-	write(fd, &info, sizeof(info));
-	printf("OK\n");
-	return 0;
+    lseek(fd, FFS_BLOCK_SIZE, SEEK_SET);
+    write(fd, &info, sizeof(info));
+    printf("OK\n");
+    return 0;
 }

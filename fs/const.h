@@ -1,7 +1,7 @@
 #ifndef _CONSTS_FFS_H
 #define _CONSTS_FFS_H
 
-#define FFS_MAGIC 0xBA0BAB01
+#define FFS_MAGIC 0xBA0BAB00
 #define FFS_BLOCK_SIZE 512
 
 struct ffs_metainfo_sector {

@@ -3,14 +3,32 @@
 #define FFS_ROOT_INO 1
 #define FFS_FSINFO_INO 2
 
-static unsigned int last_ino = 3;
+unsigned int last_ino = 3;
 
 struct inode *user_file_inode;
+static struct kmem_cache *ffs_inode_cachep;
+
+void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
+{
+    struct va_format vaf;
+    va_list args;
+
+    va_start(args, fmt);
+    vaf.fmt = fmt;
+    vaf.va = &args;
+    printk("%sFFS (%s): %pV\n", level, sb->s_id, &vaf);
+    va_end(args);
+}
+
+static inline struct ffs_inode_info *FFS_I(struct inode *inode)
+{
+    return container_of(inode, struct ffs_inode_info, vfs_inode);
+}
 
 struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags) {
-    // struct super_block *sb = parent_inode->i_sb;
+    struct super_block *sb = parent_inode->i_sb;
     // struct ffs_sb_info *sbi = sb->s_fs_info;
-    // printk(KERN_DEBUG "lookup...\n");
+    kernel_msg(sb, KERN_DEBUG, "lookup...");
     if (parent_inode->i_ino != FFS_ROOT_INO)
         return ERR_PTR(-ENOENT);
 
@@ -19,10 +37,9 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
 }
 
 int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
-    int err;
     struct dentry *de = file->f_dentry;
 
-    printk( "ffs: file_operations.readdir called\n" );
+    kernel_msg(de->d_sb, KERN_DEBUG, "ffs: file_operations.readdir called");
     if(file->f_pos > 0 )
         return 1;
     if(filldir(dirent, ".", 1, file->f_pos++, de->d_inode->i_ino, DT_DIR)||
@@ -55,9 +72,29 @@ struct file_operations ffs_dir_fops = {
     readdir: &ffs_f_readdir
 };
 
+
+static struct inode *ffs_alloc_inode(struct super_block *sb)
+{
+    struct ffs_inode_info *ei;
+    ei = (struct ffs_inode_info *)kmem_cache_alloc(ffs_inode_cachep, GFP_KERNEL);
+    if (!ei)
+            return NULL;
+    ei->vfs_inode.i_sb = sb;
+    kernel_msg(sb, KERN_DEBUG, "alloc inode");
+    // ei->i_dir_start_lookup = 0;
+    rwlock_init(&ei->rwlock);
+    return &ei->vfs_inode;
+}
+
+static void ffs_destroy_inode(struct inode *inode)
+{
+    kernel_msg(inode->i_sb, KERN_DEBUG, "destroy inode %u\n", (unsigned)inode->i_ino);
+    kmem_cache_free(ffs_inode_cachep, FFS_I(inode));
+}
+
 static const struct super_operations ffs_sops = {
-        // .alloc_inode    = fat_alloc_inode,
-        // .destroy_inode  = fat_destroy_inode,
+        .alloc_inode    = ffs_alloc_inode,
+        .destroy_inode  = ffs_destroy_inode,
         // .write_inode    = fat_write_inode,
         // .evict_inode    = fat_evict_inode,
         // .put_super      = fat_put_super,
@@ -66,18 +103,6 @@ static const struct super_operations ffs_sops = {
 
         // .show_options   = fat_show_options,
 };
-
-void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
-{
-    struct va_format vaf;
-    va_list args;
-
-    va_start(args, fmt);
-    vaf.fmt = fmt;
-    vaf.va = &args;
-    printk("%sFFS (%s): %pV\n", level, sb->s_id, &vaf);
-    va_end(args);
-}
 
 // ssize_t ffs_f_read( struct file *file, char *buf, size_t max, loff_t *offset ) {
 //     int i;
@@ -92,10 +117,11 @@ void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
 //     return buflen;
 // }
 
+
 static int ffs_read_root(struct inode *inode)
 {
     struct super_block *sb = inode->i_sb;
-    printk(KERN_DEBUG "ffs_read_root\n");
+    kernel_msg(sb, KERN_DEBUG, "ffs_read_root");
     user_file_inode = new_inode(sb);
     user_file_inode->i_ino = last_ino++;
     // user_file_inode->i_size = 6;
@@ -111,7 +137,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     struct buffer_head *bh;
     struct ffs_metainfo_sector *metainfo;
     struct inode *fsinfo_inode = 0, *root_inode = 0;
-    printk(KERN_DEBUG "ffs_fill_super\n");
+    kernel_msg(sb, KERN_DEBUG, "ffs_fill_super");
     /* filesystem information */
     sbi = kzalloc(sizeof(struct ffs_sb_info), GFP_KERNEL);
     if (!sbi)
@@ -124,7 +150,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     sb->s_flags |= MS_NODIRATIME | MS_NOATIME;  // no modification time
 
     // read second block (first for boot sector)
-    printk(KERN_DEBUG "reading info block\n");
+    kernel_msg(sb, KERN_DEBUG, "reading info block");
     sb_min_blocksize(sb, FFS_BLOCK_SIZE);
     bh = sb_bread(sb, 1);
     // read metainfo to superblock-info
@@ -136,7 +162,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
         brelse(bh);
         goto out_fail;
     } else {
-        kernel_msg(sb, KERN_DEBUG, "magic: OK", metainfo->magic, cpu_to_le32(FFS_MAGIC));
+        kernel_msg(sb, KERN_DEBUG, "magic: OK");
     }
 
     sb_set_blocksize(sb, metainfo->block_size);
@@ -171,7 +197,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
         kernel_msg(sb, KERN_ERR, "get root inode failed");
         goto out_fail;
     }
-    printk(KERN_DEBUG "superblock generated\n");
+    kernel_msg(sb, KERN_DEBUG, "superblock generated");
     return 0;
 
 out_fail:
@@ -200,14 +226,33 @@ static struct file_system_type ffs_fs_type = {
 };
 MODULE_ALIAS_FS("ffs");
 
+static void init_once(void * foo)
+{
+    struct ffs_inode_info *ei = (struct ffs_inode_info *) foo;
+    inode_init_once(&ei->vfs_inode);
+}
+
+static int init_inodecache(void)
+{
+        ffs_inode_cachep = kmem_cache_create("ffs_inode_cache",
+                                             sizeof(struct ffs_inode_info),
+                                             0, SLAB_RECLAIM_ACCOUNT,
+                                             init_once);
+        if (ffs_inode_cachep == NULL)
+                return -ENOMEM;
+        return 0;
+}
+
 static int __init init_ffs_fs(void)
 {
+    init_inodecache();
     return register_filesystem(&ffs_fs_type);
 }
 
 static void __exit exit_ffs_fs(void)
 {
     unregister_filesystem(&ffs_fs_type);
+    kmem_cache_destroy(ffs_inode_cachep);
 }
 
 MODULE_LICENSE("GPL");
