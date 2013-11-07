@@ -42,7 +42,7 @@ struct ffs_inode_info {
     struct inode vfs_inode;
     struct ffs_fd fd;
     struct hlist_node list_node;
-    // struct buffer_head *bh;
+    struct buffer_head *datablock;
 };
 
 #endif /* !_FFS_H */

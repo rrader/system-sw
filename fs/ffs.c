@@ -39,11 +39,10 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
         return ERR_PTR(-ENOENT);
 
     hlist_for_each_entry(i, head, list_node) {
-        kernel_msg(sb, KERN_DEBUG, "file[%d] %s", i->vfs_inode.i_ino, FFS_I(&i->vfs_inode)->fd.filename);
-        // d_add(dentry, &i->vfs_inode);
         if (strcmp(FFS_I(&i->vfs_inode)->fd.filename, dentry->d_name.name) == 0)
             i_inode = &i->vfs_inode;
     }
+
     if (i_inode)
         d_add(dentry, i_inode);
     else
@@ -53,10 +52,10 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
 
 int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     struct dentry *de = file->f_dentry;
-    struct ffs_inode_info *i;
     struct super_block *sb = de->d_inode->i_sb;
     struct ffs_sb_info *sbi = sb->s_fs_info;
     struct hlist_head *head = &sbi->inodes;
+    struct ffs_inode_info *i;
 
     kernel_msg(de->d_sb, KERN_DEBUG, "ffs: file_operations.readdir called");
     if(file->f_pos > 0 )
@@ -83,8 +82,54 @@ static const struct inode_operations ffs_dir_inode_operations = {
         // .getattr        = ffs_getattr,
 };
 
+
+// char file_buf[1024] = "Hello World\n";
+// int file_size = 12;
+
+ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset) {
+    struct dentry *de = file->f_dentry;
+    struct ffs_inode_info *f_inode = FFS_I(de->d_inode);
+    struct super_block *sb = de->d_inode->i_sb;
+    struct buffer_head *bh;
+    // struct ffs_sb_info *sbi = sb->s_fs_info;
+    // struct hlist_head *head = &sbi->inodes;
+    unsigned int block_count, block_index, block_offset, block_num, len, able_to_read;
+    signed int till_end;
+    kernel_msg(sb, KERN_DEBUG, "reading file, offset %d", (int)*offset);
+
+    block_count = *(int*)(f_inode->datablock->b_data);
+    block_index = (*offset) / FFS_BLOCK_SIZE;
+    block_offset = (*offset)-(block_index*FFS_BLOCK_SIZE);
+    block_num = *((int*)(f_inode->datablock->b_data)+block_index+1);
+    kernel_msg(sb, KERN_DEBUG, "block %d/%d [%d], block_offset %d", block_index, block_count, block_num, block_offset);
+    bh = sb_bread(sb, block_num);
+    able_to_read = FFS_BLOCK_SIZE-block_offset;
+    till_end = de->d_inode->i_size - block_index*FFS_BLOCK_SIZE - block_offset;
+    if (till_end<0) {
+        return 0;
+    }
+    kernel_msg(sb, KERN_DEBUG, "%d till end", till_end);
+    able_to_read = (till_end<able_to_read)?till_end:able_to_read;
+    len = (able_to_read<=max)?able_to_read:max;
+    copy_to_user(buf, bh->b_data, len);
+    *offset += len;
+
+    return len;
+
+    // int i;
+    // int buflen;
+    // if(*offset > 0)
+    //     return 0;
+    // printk( "rkfs: file_operations.read called %d %d\n", max, *offset );
+    // buflen = file_size > max ? max : file_size;
+    // copy_to_user(buf, file_buf, buflen);
+    // //           copy_to_user(buf, file_buf, buflen);
+    // *offset += buflen; // advance the offset
+    // return buflen;
+}
+
 struct file_operations ffs_file_fops = {
-    // read : &rkfs_f_read,
+    read : &ffs_file_read,
     // write: &rkfs_f_write
     //    release: &rkfs_f_release
 };
@@ -193,6 +238,7 @@ static int ffs_read_root(struct inode *inode)
                 new_inode->i_fop = &ffs_file_fops;
                 strcpy(FFS_I(new_inode)->fd.filename, fd->filename);
 
+                FFS_I(new_inode)->datablock = sb_bread(sb, fd->datablock_id);
                 hlist_add_head(&FFS_I(new_inode)->list_node, &sbi->inodes);
             }
             fd += 1;
