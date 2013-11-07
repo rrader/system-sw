@@ -6,7 +6,6 @@
 
 unsigned int last_ino = 3;
 
-// struct inode *user_file_inode;
 struct inode *root_inode = 0;
 static struct kmem_cache *ffs_inode_cachep;
 
@@ -83,16 +82,11 @@ static const struct inode_operations ffs_dir_inode_operations = {
 };
 
 
-// char file_buf[1024] = "Hello World\n";
-// int file_size = 12;
-
 ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset) {
     struct dentry *de = file->f_dentry;
     struct ffs_inode_info *f_inode = FFS_I(de->d_inode);
     struct super_block *sb = de->d_inode->i_sb;
     struct buffer_head *bh;
-    // struct ffs_sb_info *sbi = sb->s_fs_info;
-    // struct hlist_head *head = &sbi->inodes;
     unsigned int block_count, block_index, block_offset, block_num, len, able_to_read;
     signed int till_end;
     kernel_msg(sb, KERN_DEBUG, "reading file, offset %d", (int)*offset);
@@ -115,17 +109,6 @@ ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *o
     *offset += len;
 
     return len;
-
-    // int i;
-    // int buflen;
-    // if(*offset > 0)
-    //     return 0;
-    // printk( "rkfs: file_operations.read called %d %d\n", max, *offset );
-    // buflen = file_size > max ? max : file_size;
-    // copy_to_user(buf, file_buf, buflen);
-    // //           copy_to_user(buf, file_buf, buflen);
-    // *offset += buflen; // advance the offset
-    // return buflen;
 }
 
 struct file_operations ffs_file_fops = {
@@ -135,7 +118,7 @@ struct file_operations ffs_file_fops = {
 };
 
 struct file_operations ffs_dir_fops = {
-    read   : generic_read_dir,
+    // read   : generic_read_dir,
     readdir: &ffs_f_readdir
 };
 
@@ -173,19 +156,6 @@ static const struct super_operations ffs_sops = {
 
         // .show_options   = fat_show_options,
 };
-
-// ssize_t ffs_f_read( struct file *file, char *buf, size_t max, loff_t *offset ) {
-//     int i;
-//     int buflen;
-//     if(*offset > 0)
-//         return 0;
-//     printk( "rkfs: file_operations.read called %d %d\n", max, *offset );
-//     buflen = file_size > max ? max : file_size;
-//     __generic_copy_to_user(buf, file_buf, buflen);
-//     //           copy_to_user(buf, file_buf, buflen);
-//     *offset += buflen; // advance the offset
-//     return buflen;
-// }
 
 #define CHECK_BIT(bm, n) (*(char*)((char*)bm + ((n)/8)) & (char)(1 << (n % 8)))
 
@@ -233,7 +203,7 @@ static int ffs_read_root(struct inode *inode)
                 new_inode->i_size = fd->file_size;
                 if (fd->type == FFS_REG) {
                     kernel_msg(sb, KERN_DEBUG, "(is regular file)");
-                    new_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH;
+                    new_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH;
                 } else; // directory
                 new_inode->i_fop = &ffs_file_fops;
                 strcpy(FFS_I(new_inode)->fd.filename, fd->filename);
@@ -243,20 +213,8 @@ static int ffs_read_root(struct inode *inode)
             }
             fd += 1;
             index++;
-            // new_inode(sb);
         }
     }
-
-
-    // hlist_for_each_entry(in, &sbi->inodes, list_node) {
-    //     kernel_msg(sb, KERN_DEBUG, "inode of %s file", in->fd.filename);
-    // }
-
-    // user_file_inode = new_inode(sb);
-    // user_file_inode->i_ino = last_ino++;
-    // // user_file_inode->i_size = 6;
-    // user_file_inode->i_mode = S_IFREG; //|S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH;
-    // // user_file_inode->i_fop = &ffs_file_fops;
     return 0;
 }
 
