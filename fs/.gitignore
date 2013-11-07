@@ -4,3 +4,4 @@ Module.symvers
 *.mod.c
 mkfs.ffs/img
 modules.order
+mkfs.ffs/mkfs.ffs
