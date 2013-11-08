@@ -15,8 +15,6 @@ static int ffs_open(struct inode *inode, struct file *file);
 struct file_operations ffs_file_fops = {
     read : &ffs_file_read,
     open : &ffs_open,
-    // write: &rkfs_f_write
-    //    release: &rkfs_f_release
 };
 
 // ====== UTILS =======
@@ -57,20 +55,18 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
 
     kernel_msg(sb, KERN_DEBUG, "lookup... %s", dentry->d_name.name);
     if (parent_inode->i_ino != FFS_ROOT_INO)
-        d_add(dentry, NULL);
-        // return ERR_PTR(-ENOENT);
+        // d_add(dentry, NULL);
+        return ERR_PTR(-ENOENT);
 
     hlist_for_each_entry(i, head, list_node) {
         if (strcmp(FFS_I(&i->vfs_inode)->fd.filename, dentry->d_name.name) == 0)
             i_inode = &i->vfs_inode;
     }
 
-    // i_inode->i_count++;
     if (i_inode)
         d_add(dentry, i_inode);
     else
         d_add(dentry, NULL);
-        // return ERR_PTR(-ENOENT);
     return NULL;
 }
 
@@ -103,14 +99,6 @@ static unsigned int ffs_get_empty_block(struct super_block *sb) {
     //TODO: fix bitmask and write to block
     return 0;
 }
-
-// static int ffs_mknod(struct inode *dir,
-//            struct dentry *dentry,
-//            umode_t mode, dev_t rdev)
-// {
-//     kernel_msg(dir->i_sb, KERN_DEBUG, "mknod...");
-//     return -EINVAL;
-// }
 
 static int ffs_create (struct inode *dir, struct dentry * dentry,
                         umode_t mode, bool excl)
@@ -146,21 +134,6 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             inode->i_fop = &ffs_file_fops;
 
             hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
-
-            // file = kmalloc(sizeof(*file), GFP_KERNEL);
-            // if (!file)
-            //     return -EAGAIN;        
-            // inode->i_blocks = 0;
-            // inode->i_op = &komafs_file_inode_operations;
-            // inode->i_fop = &komafs_file_operations;
-            // file->inode = inode;
-            // page = alloc_page(GFP_KERNEL);
-            // if (!page)
-            //         goto cleanup;
-
-            // file->conts = page_address(page);
-            // INIT_LIST_HEAD(&file->list);
-            // list_add_tail(&file->list, &contents_list); 
             break;
     }
 
@@ -174,11 +147,6 @@ cleanup:
 }
 
 //============================
-
-
-
-
-
 
 
 static const struct inode_operations ffs_dir_inode_operations = {
@@ -268,7 +236,6 @@ static struct inode *ffs_alloc_inode(struct super_block *sb)
     ei->vfs_inode.i_sb = sb;
     kernel_msg(sb, KERN_DEBUG, "alloc inode");
     ei->vfs_inode.i_state = 0;
-    // rwlock_init(&ei->rwlock);
     insert_inode_hash(&ei->vfs_inode);
     return &ei->vfs_inode;
 }
@@ -282,13 +249,6 @@ static void ffs_destroy_inode(struct inode *inode)
 static const struct super_operations ffs_sops = {
         .alloc_inode    = ffs_alloc_inode,
         .destroy_inode  = ffs_destroy_inode,
-        // .write_inode    = fat_write_inode,
-        // .evict_inode    = fat_evict_inode,
-        // .put_inode      = force_delete,
-        // .statfs         = fat_statfs,
-        // .remount_fs     = fat_remount,
-
-        // .show_options   = fat_show_options,
 };
 
 static int ffs_read_root(struct inode *inode)
@@ -411,7 +371,6 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
         goto out_fail;
     }
     insert_inode_hash(root_inode);
-    //ffs_attach(root_inode, 0);
     sb->s_root = d_make_root(root_inode);
     if (!sb->s_root) {
         kernel_msg(sb, KERN_ERR, "get root inode failed");
@@ -437,12 +396,27 @@ static struct dentry *ffs_mount(struct file_system_type *fs_type,
     return mount_bdev(fs_type, flags, dev_name, data, ffs_fill_super);
 }
 
+static void ffs_kill_block_super(struct super_block *sb)
+{
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    struct hlist_head *head = &sbi->inodes;
+    struct ffs_inode_info *i;
+
+    kernel_msg(sb, KERN_DEBUG, "kill superblock");
+
+    hlist_for_each_entry(i, head, list_node) {
+        kernel_msg(sb, KERN_DEBUG, "inode %d", i->vfs_inode.i_ino);
+        ffs_destroy_inode(&i->vfs_inode);
+    }
+
+    ffs_destroy_inode(root_inode);
+}
+
 static struct file_system_type ffs_fs_type = {
         .owner          = THIS_MODULE,
         .name           = "ffs",
         .mount          = ffs_mount,
-        .kill_sb        = kill_block_super,
-        // .fs_flags       = FS_REQUIRES_DEV,
+        .kill_sb        = ffs_kill_block_super,
 };
 MODULE_ALIAS_FS("ffs");
 

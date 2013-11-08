@@ -10,5 +10,6 @@ mkfs:
 	make -C mkfs.ffs
 
 reload:
+	-rmmod ffs
 	-rmmod -f ffs
 	insmod ffs.ko
