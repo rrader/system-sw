@@ -12,14 +12,16 @@ static struct kmem_cache *ffs_inode_cachep;
 static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset);
 static int ffs_open(struct inode *inode, struct file *file);
 
+static struct inode *ffs_alloc_inode(struct super_block *sb);
+
 struct file_operations ffs_file_fops = {
     read : &ffs_file_read,
-    open : &ffs_open,
 };
 
 // ====== UTILS =======
 
-void _ffs_fd_copy(struct ffs_fd *to, struct ffs_fd *from) {
+void _ffs_fd_copy(struct ffs_fd *to, struct ffs_fd *from)
+{   // copy file descriptor
     strcpy(to->filename, from->filename);
     to->link_count = from->link_count;
     to->file_size = from->file_size;
@@ -28,7 +30,7 @@ void _ffs_fd_copy(struct ffs_fd *to, struct ffs_fd *from) {
 }
 
 void kernel_msg(struct super_block *sb, const char *level, const char *fmt, ...)
-{
+{   // printf for kernel
     struct va_format vaf;
     va_list args;
 
@@ -46,7 +48,8 @@ static inline struct ffs_inode_info *FFS_I(struct inode *inode)
     return container_of(inode, struct ffs_inode_info, vfs_inode);
 }
 
-struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags) {
+struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags)
+{   // add inode to dentry
     struct super_block *sb = parent_inode->i_sb;
     struct ffs_sb_info *sbi = sb->s_fs_info;
     struct hlist_head *head = &sbi->inodes;
@@ -70,11 +73,10 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
     return NULL;
 }
 
-static struct inode *ffs_alloc_inode(struct super_block *sb);
+// ======== INODE ==========
 
-// ======================
-
-static unsigned int ffs_get_empty_fd(struct super_block *sb) {
+static unsigned int ffs_get_empty_fd(struct super_block *sb)
+{   //find empty fd and set bit in bitmask
     struct ffs_sb_info *sbi = sb->s_fs_info;
     unsigned int i;
     for(i=0; i<sbi->max_file_count; i++) {
@@ -87,7 +89,8 @@ static unsigned int ffs_get_empty_fd(struct super_block *sb) {
     return 0;
 }
 
-static unsigned int ffs_get_empty_block(struct super_block *sb) {
+static unsigned int ffs_get_empty_block(struct super_block *sb)
+{   //find empty block and set bit in bitmask
     struct ffs_sb_info *sbi = sb->s_fs_info;
     unsigned int i;
     for(i=0; i<sbi->b_bm_blocks; i++) {
@@ -102,7 +105,7 @@ static unsigned int ffs_get_empty_block(struct super_block *sb) {
 
 static int ffs_create (struct inode *dir, struct dentry * dentry,
                         umode_t mode, bool excl)
-{
+{   // create regular file
     struct inode *inode;
     struct ffs_sb_info *sbi = dir->i_sb->s_fs_info;
     int fd_i;
@@ -121,7 +124,6 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
         default:
             inode->i_mode = mode | S_IFREG;
             kernel_msg(dir->i_sb, KERN_DEBUG, "create file... %s", dentry->d_name.name);
-            // goto cleanup;
 
             strcpy(FFS_I(inode)->fd.filename, dentry->d_name.name);
             FFS_I(inode)->fd.type = FFS_REG;
@@ -146,9 +148,6 @@ cleanup:
     return -EINVAL;
 }
 
-//============================
-
-
 static const struct inode_operations ffs_dir_inode_operations = {
         .create         = ffs_create,
         .lookup         = ffs_lookup,
@@ -161,8 +160,10 @@ static const struct inode_operations ffs_dir_inode_operations = {
         // .getattr        = ffs_getattr,
 };
 
+//=========== FILE ==========
 
-static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset) {
+static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset)
+{   // read from file
     struct dentry *de = file->f_dentry;
     struct ffs_inode_info *f_inode = FFS_I(de->d_inode);
     struct super_block *sb = de->d_inode->i_sb;
@@ -191,13 +192,7 @@ static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, lo
     return len;
 }
 
-static int ffs_open(struct inode *inode, struct file *file)
-{
-    kernel_msg(inode->i_sb, KERN_DEBUG, "open...");
-
-    return 0;
-}
-
+// directory ls
 int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     struct dentry *de = file->f_dentry;
     struct super_block *sb = de->d_inode->i_sb;
@@ -221,10 +216,10 @@ int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
 
 
 struct file_operations ffs_dir_fops = {
-    // read   : generic_read_dir,
     readdir: &ffs_f_readdir
 };
 
+// ========== SUPER ===========
 
 static struct inode *ffs_alloc_inode(struct super_block *sb)
 {
@@ -251,6 +246,7 @@ static const struct super_operations ffs_sops = {
         .destroy_inode  = ffs_destroy_inode,
 };
 
+// reads initial state of FS from device
 static int ffs_read_root(struct inode *inode)
 {
     struct super_block *sb = inode->i_sb;
@@ -388,6 +384,7 @@ out_fail:
         kfree(sbi);
         return error;
 }
+
 
 static struct dentry *ffs_mount(struct file_system_type *fs_type,
                         int flags, const char *dev_name,
