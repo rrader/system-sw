@@ -10,7 +10,10 @@
 #include <linux/limits.h>
 #include "const.h"
 
-#define CHECK_BIT(bm, n) (*(char*)((char*)bm + ((n)/8)) & (char)(1 << (n % 8)))
+#define BITMASK_BYTE(n) ((n)/8)
+#define BITMASK_PAGE(n) (BITMASK_BYTE(n)/FFS_BLOCK_SIZE)
+#define CHECK_BIT(bm, n) (*(char*)((char*)(bm) + ((n)/8)) & (char)(1 << ((n) % 8)))
+#define SET_BIT(bm, n) *((char*)(bm) + ((n)/8)) = (*((char*)(bm) + ((n)/8)) | (char)(1 << ((n) % 8)))
 
 struct ffs_sb_info {
     unsigned int block_size;

@@ -13,3 +13,10 @@ reload:
 	-rmmod ffs
 	-rmmod -f ffs
 	insmod ffs.ko
+
+test:
+	-sudo umount /mnt/
+	-sudo umount -f /mnt/
+	make all
+	sudo make reload
+	sudo mount -o loop -t ffs mkfs.ffs/img /mnt
