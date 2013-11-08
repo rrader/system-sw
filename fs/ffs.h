@@ -10,6 +10,8 @@
 #include <linux/limits.h>
 #include "const.h"
 
+#define CHECK_BIT(bm, n) (*(char*)((char*)bm + ((n)/8)) & (char)(1 << (n % 8)))
+
 struct ffs_sb_info {
     unsigned int block_size;
     unsigned int block_count;

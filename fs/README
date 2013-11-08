@@ -1,1 +1,5 @@
 sudo umount -f /mnt/; make && sudo make reload && sudo mount -o loop -t ffs mkfs.ffs/img /mnt
+
+to write
+mark_buffer_dirty(bh);
+sync_dirty_buffer(bh);
