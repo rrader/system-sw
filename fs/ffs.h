@@ -26,6 +26,9 @@ struct ffs_sb_info {
     unsigned int b_bm_blocks;     // blocks bitmask
     unsigned int fd_bm_blocks;    // file descriptors bitmask
 
+    unsigned int fd_bitmask_len;
+    unsigned int b_bitmask_len;
+
     char* b_bitmask;
     char* fd_bitmask;
     struct hlist_head inodes;

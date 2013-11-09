@@ -1,8 +1,11 @@
 #include "ffs.h"
 
 #define FFS_FSINFO_INO 2
-#define FFS_USERFILES_OFFSET 10
+#define FFS_USERFILES_OFFSET 1
 #define FFS_ROOT_INO FFS_USERFILES_OFFSET
+
+static DEFINE_SPINLOCK(bitmap_fd_lock);
+static DEFINE_SPINLOCK(bitmap_b_lock);
 
 unsigned int last_ino = 3;
 
@@ -104,21 +107,33 @@ struct inode *ffs_iget(struct super_block *sb, loff_t i_pos)
         if (i->vfs_inode.i_ino == i_pos)
             return &i->vfs_inode;
     }
+    return NULL;
 }
 
 static unsigned int ffs_get_empty_fd(struct super_block *sb)
 {   //find empty fd and set bit in bitmask
     struct ffs_sb_info *sbi = sb->s_fs_info;
-    unsigned int i;
+    unsigned int i, len;
     struct buffer_head *bh;
     for(i=0; i<sbi->max_file_count; i++) {
         if (!CHECK_BIT(sbi->fd_bitmask, i)) {
+            
+            spin_lock(&bitmap_fd_lock);
             SET_BIT(sbi->fd_bitmask, i);
             // mark dirty and sync BITMASK_PAGE(i) block
-            // bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
-            // memcpy(bh->b_data, sbi->fd_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, FFS_BLOCK_SIZE);
-            // mark_buffer_dirty(bh);
-            // sync_dirty_buffer(bh);
+            bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
+            kernel_msg(sb, KERN_DEBUG, "BITMASK_FD block#%d", BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
+            kernel_msg(sb, KERN_DEBUG, "%X\t%X", *(char*)bh->b_data, *(char*)sbi->fd_bitmask);
+            len = sbi->fd_bitmask_len - BITMASK_PAGE(i)*FFS_BLOCK_SIZE;
+            len = (len>FFS_BLOCK_SIZE)?FFS_BLOCK_SIZE:len;
+            memcpy(bh->b_data, sbi->fd_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, len);
+            kernel_msg(sb, KERN_DEBUG, "copied %d bytes of bitmask", len);
+
+            mark_buffer_dirty(bh);
+            sync_dirty_buffer(bh);
+            wait_on_buffer(bh);
+
+            spin_unlock(&bitmap_fd_lock);
             return i + 1;
         }
     }
@@ -130,10 +145,27 @@ static unsigned int ffs_get_empty_fd(struct super_block *sb)
 static unsigned int ffs_get_empty_block(struct super_block *sb)
 {   //find empty block and set bit in bitmask
     struct ffs_sb_info *sbi = sb->s_fs_info;
-    unsigned int i;
+    unsigned int i, len;
+    struct buffer_head *bh;
     for(i=0; i<sbi->block_count; i++) {
         if (!CHECK_BIT(sbi->b_bitmask, i)) {
+
+            spin_lock(&bitmap_b_lock);
             SET_BIT(sbi->b_bitmask, i);
+            // mark dirty and sync BITMASK_PAGE(i) block
+            bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_B_BITMASK_BLOCK(sbi));
+            kernel_msg(sb, KERN_DEBUG, "BITMASK_B block#%d", BITMASK_PAGE(i) + FFS_B_BITMASK_BLOCK(sbi));
+            kernel_msg(sb, KERN_DEBUG, "%X\t%X", *(char*)bh->b_data, *(char*)sbi->b_bitmask);
+            len = sbi->b_bitmask_len - BITMASK_PAGE(i)*FFS_BLOCK_SIZE;
+            len = (len>FFS_BLOCK_SIZE)?FFS_BLOCK_SIZE:len;
+            memcpy(bh->b_data, sbi->b_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, len);
+            kernel_msg(sb, KERN_DEBUG, "copied %d bytes of bitmask", len);
+
+            mark_buffer_dirty(bh);
+            sync_dirty_buffer(bh);
+            wait_on_buffer(bh);
+
+            spin_unlock(&bitmap_b_lock);
             // mark dirty and sync BITMASK_PAGE(i) block
             return i + 1;
         }
@@ -150,7 +182,7 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
     struct ffs_sb_info *sbi = dir->i_sb->s_fs_info;
     int fd_i;
 
-    inode = ffs_alloc_inode(dir->i_sb);
+    inode = new_inode(dir->i_sb);
 
     inode->i_blocks = 0;
     fd_i = ffs_get_empty_fd(dir->i_sb);
@@ -173,10 +205,10 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             kernel_msg(dir->i_sb, KERN_DEBUG, "new file inode#%d datablock#%d", fd_i, FFS_I(inode)->fd.datablock_id);
 
             inode->i_size = 0;
-            inode->i_mode = S_IFREG|S_IRUGO|S_IWUGO;
+            // inode->i_mode = S_IFREG|S_IRUGO|S_IWUGO;
             inode->i_fop = &ffs_file_fops;
 
-            hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
+            // hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
             break;
     }
 
@@ -231,7 +263,7 @@ static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf,
         memcpy(buf, bh->b_data, len);
     *offset += len;
 
-    brelse(bh);
+    // brelse(bh);
 
     return len;
 }
@@ -290,14 +322,14 @@ struct file_operations ffs_dir_fops = {
 static struct inode *ffs_alloc_inode(struct super_block *sb)
 {
     struct ffs_inode_info *ei;
-    ei = (struct ffs_inode_info *)kmem_cache_alloc(ffs_inode_cachep, GFP_KERNEL);
+    ei = (struct ffs_inode_info *)kmem_cache_alloc(ffs_inode_cachep, GFP_NOFS);
     if (!ei)
             return NULL;
-    inode_init_always(sb, &ei->vfs_inode);
-    ei->vfs_inode.i_sb = sb;
+    // inode_init_always(sb, &ei->vfs_inode);
+    // ei->vfs_inode.i_sb = sb;
     kernel_msg(sb, KERN_DEBUG, "alloc inode");
-    ei->vfs_inode.i_state = 0;
-    insert_inode_hash(&ei->vfs_inode);
+    // ei->vfs_inode.i_state = 0;
+    // insert_inode_hash(&ei->vfs_inode);
     return &ei->vfs_inode;
 }
 
@@ -317,46 +349,45 @@ static int ffs_read_root(struct inode *inode)
 {
     struct super_block *sb = inode->i_sb;
     struct ffs_sb_info *sbi = sb->s_fs_info;
-    int fd_bitmask_len, b_bitmask_len;
     struct buffer_head *bh;
     int copied, b_id, i, j, to_copy, index;
     int fd_per_block = FFS_BLOCK_SIZE / sizeof(struct ffs_fd);
     struct ffs_fd *fd;
-    struct inode *new_inode = NULL;
+    struct inode *n_inode = NULL;
     kernel_msg(sb, KERN_DEBUG, "ffs_read_root");
 
-    b_bitmask_len = (sbi->block_count + 7) / 8;
-    sbi->b_bitmask = kzalloc(b_bitmask_len, GFP_KERNEL);
-    kernel_msg(sb, KERN_DEBUG, "blocks bitmask: %d", b_bitmask_len);
+    sbi->b_bitmask_len = (sbi->block_count + 7) / 8;
+    sbi->b_bitmask = kzalloc(sbi->b_bitmask_len, GFP_KERNEL);
+    kernel_msg(sb, KERN_DEBUG, "blocks bitmask: %d", sbi->b_bitmask_len);
 
     b_id = 1;
     copied = 0;
     for(i=0; i<sbi->b_bm_blocks; i++) {
         bh = sb_bread(sb, b_id++);
-        to_copy = b_bitmask_len - copied;
+        to_copy = sbi->b_bitmask_len - copied;
         if (to_copy >= FFS_BLOCK_SIZE)
             to_copy = FFS_BLOCK_SIZE;
         memcpy(sbi->b_bitmask + copied, bh->b_data, to_copy);
         copied -= to_copy;
-        brelse(bh);
+        // brelse(bh);
     }
 
     //read from b_bm_blocks block file descriptors bitmask
-    fd_bitmask_len = (sbi->max_file_count + 7) / 8;
-    sbi->fd_bitmask = kzalloc(fd_bitmask_len, GFP_KERNEL);
-    kernel_msg(sb, KERN_DEBUG, "fd bitmask: %d", fd_bitmask_len);
+    sbi->fd_bitmask_len = (sbi->max_file_count + 7) / 8;
+    sbi->fd_bitmask = kzalloc(sbi->fd_bitmask_len, GFP_KERNEL);
+    kernel_msg(sb, KERN_DEBUG, "fd bitmask: %d", sbi->fd_bitmask_len);
     
     b_id = FFS_FD_BITMASK_BLOCK(sbi);
     kernel_msg(sb, KERN_DEBUG, "reading fd bitmap, block:%d", b_id);
     copied = 0;
     for(i=0; i<sbi->fd_bm_blocks; i++) {
         bh = sb_bread(sb, b_id++);
-        to_copy = fd_bitmask_len - copied;
+        to_copy = sbi->fd_bitmask_len - copied;
         if (to_copy >= FFS_BLOCK_SIZE)
             to_copy = FFS_BLOCK_SIZE;
         memcpy(sbi->fd_bitmask + copied, bh->b_data, to_copy);
         copied -= to_copy;
-        brelse(bh);
+        // brelse(bh);
     }
 
     //read descriptors
@@ -371,29 +402,29 @@ static int ffs_read_root(struct inode *inode)
                 kernel_msg(sb, KERN_DEBUG, "found %d file", index);
                 if ((fd->type == FFS_DIR) && (index == 0)) {
                     kernel_msg(sb, KERN_DEBUG, "(is root directory)");
-                    new_inode = root_inode;
+                    n_inode = root_inode;
                 } else
                 if (fd->type == FFS_REG) {
-                    new_inode = ffs_alloc_inode(sb);
-                    new_inode->i_ino = FFS_USERFILES_OFFSET + index;
+                    n_inode = new_inode(sb);
+                    n_inode->i_ino = FFS_USERFILES_OFFSET + index;
                     kernel_msg(sb, KERN_DEBUG, "(is regular file)");
-                    new_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH;
-                    new_inode->i_fop = &ffs_file_fops;
+                    n_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH;
+                    n_inode->i_fop = &ffs_file_fops;
                 } else if (fd->type == FFS_DIR) {
                     kernel_msg(sb, KERN_DEBUG, "(is directory)");
                     //TODO
                 }
 
-                new_inode->i_size = fd->file_size;
-                FFS_I(new_inode)->datablock = sb_bread(sb, fd->datablock_id);
-                _ffs_fd_copy(&(FFS_I(new_inode)->fd), fd);
+                n_inode->i_size = fd->file_size;
+                FFS_I(n_inode)->datablock = sb_bread(sb, fd->datablock_id);
+                _ffs_fd_copy(&(FFS_I(n_inode)->fd), fd);
 
-                hlist_add_head(&FFS_I(new_inode)->list_node, &sbi->inodes);
+                hlist_add_head(&FFS_I(n_inode)->list_node, &sbi->inodes);
             }
             fd += 1;
             index++;
         }
-        brelse(bh);
+        // brelse(bh);
     }
     return 0;
 }
@@ -440,12 +471,12 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     sbi->max_file_count = metainfo->max_file_count;
     sbi->b_bm_blocks = metainfo->b_bm_blocks;
     sbi->fd_bm_blocks = metainfo->fd_bm_blocks;
-    brelse(bh);
+    // brelse(bh);
 
     INIT_HLIST_HEAD(&sbi->inodes);
 
     // fill initial state of fs
-    root_inode = ffs_alloc_inode(sb);
+    root_inode = new_inode(sb);
     if (!root_inode)
         return -ENOMEM; 
     root_inode->i_ino = FFS_ROOT_INO;
