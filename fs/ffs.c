@@ -1,8 +1,8 @@
 #include "ffs.h"
 
-#define FFS_ROOT_INO 1
 #define FFS_FSINFO_INO 2
 #define FFS_USERFILES_OFFSET 10
+#define FFS_ROOT_INO FFS_USERFILES_OFFSET
 
 unsigned int last_ino = 3;
 
@@ -10,7 +10,10 @@ struct inode *root_inode = 0;
 static struct kmem_cache *ffs_inode_cachep;
 
 static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset);
+
+static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf, size_t max, loff_t *offset, int userspace);
 static int ffs_open(struct inode *inode, struct file *file);
+struct inode *ffs_iget(struct super_block *sb, loff_t i_pos);
 
 static struct inode *ffs_alloc_inode(struct super_block *sb);
 
@@ -22,7 +25,7 @@ struct file_operations ffs_file_fops = {
 
 void _ffs_fd_copy(struct ffs_fd *to, struct ffs_fd *from)
 {   // copy file descriptor
-    strcpy(to->filename, from->filename);
+    // strcpy(to->filename, from->filename);
     to->link_count = from->link_count;
     to->file_size = from->file_size;
     to->type = from->type;
@@ -51,37 +54,71 @@ static inline struct ffs_inode_info *FFS_I(struct inode *inode)
 struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags)
 {   // add inode to dentry
     struct super_block *sb = parent_inode->i_sb;
-    struct ffs_sb_info *sbi = sb->s_fs_info;
-    struct hlist_head *head = &sbi->inodes;
-    struct ffs_inode_info *i;
-    struct inode *i_inode = 0;
+    // struct ffs_sb_info *sbi = sb->s_fs_info;
+    // struct hlist_head *head = &sbi->inodes;
+    // struct ffs_inode_info *i;
+
+    loff_t offset;
+    size_t dir_content_size;
+    struct inode *inode;
+    unsigned int i;
+    struct ffs_directory_entry *dir_content, *iter;
 
     kernel_msg(sb, KERN_DEBUG, "lookup... %s", dentry->d_name.name);
     if (parent_inode->i_ino != FFS_ROOT_INO)
         // d_add(dentry, NULL);
         return ERR_PTR(-ENOENT);
 
-    hlist_for_each_entry(i, head, list_node) {
-        if (strcmp(FFS_I(&i->vfs_inode)->fd.filename, dentry->d_name.name) == 0)
-            i_inode = &i->vfs_inode;
+    offset = 0;
+    dir_content_size = FFS_I(parent_inode)->fd.file_size;
+    dir_content = kzalloc(dir_content_size, GFP_KERNEL);
+    while (file_read(sb, parent_inode, (char*)dir_content, dir_content_size, &offset, 0));
+
+    iter = dir_content;
+    for (i=0; i< (dir_content_size/sizeof(struct ffs_directory_entry)); i++ ) {
+        if (strcmp(iter->filename, dentry->d_name.name) == 0) {
+            if ((inode = ffs_iget(sb, FFS_USERFILES_OFFSET + iter->i_fd - 1))) { //-1 because numbering from 1
+                kernel_msg(sb, KERN_DEBUG, "file #%d %s == %s ", iter->i_fd, iter->filename, dentry->d_name.name);
+                d_add(dentry, inode);
+                kfree(dir_content);
+                return NULL;
+            }
+        }
+        iter += 1;
     }
 
-    if (i_inode)
-        d_add(dentry, i_inode);
-    else
-        d_add(dentry, NULL);
+    kfree(dir_content);
+    d_add(dentry, NULL);
     return NULL;
 }
 
 // ======== INODE ==========
 
+struct inode *ffs_iget(struct super_block *sb, loff_t i_pos)
+{
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    struct hlist_head *head = &sbi->inodes;
+    struct ffs_inode_info *i;
+
+    hlist_for_each_entry(i, head, list_node) {
+        if (i->vfs_inode.i_ino == i_pos)
+            return &i->vfs_inode;
+    }
+}
+
 static unsigned int ffs_get_empty_fd(struct super_block *sb)
 {   //find empty fd and set bit in bitmask
     struct ffs_sb_info *sbi = sb->s_fs_info;
     unsigned int i;
+    struct buffer_head *bh;
     for(i=0; i<sbi->max_file_count; i++) {
         if (!CHECK_BIT(sbi->fd_bitmask, i)) {
             SET_BIT(sbi->fd_bitmask, i);
+            // mark dirty and sync BITMASK_PAGE(i) block
+            // bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
+            // memcpy(bh->b_data, sbi->fd_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, FFS_BLOCK_SIZE);
+            // mark_buffer_dirty(bh);
+            // sync_dirty_buffer(bh);
             return i + 1;
         }
     }
@@ -97,6 +134,7 @@ static unsigned int ffs_get_empty_block(struct super_block *sb)
     for(i=0; i<sbi->block_count; i++) {
         if (!CHECK_BIT(sbi->b_bitmask, i)) {
             SET_BIT(sbi->b_bitmask, i);
+            // mark dirty and sync BITMASK_PAGE(i) block
             return i + 1;
         }
     }
@@ -127,12 +165,12 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             inode->i_mode = mode | S_IFREG;
             kernel_msg(dir->i_sb, KERN_DEBUG, "create file... %s", dentry->d_name.name);
 
-            strcpy(FFS_I(inode)->fd.filename, dentry->d_name.name);
+            // strcpy(FFS_I(inode)->fd.filename, dentry->d_name.name);
             FFS_I(inode)->fd.type = FFS_REG;
             FFS_I(inode)->fd.datablock_id = ffs_get_empty_block(dir->i_sb);
             FFS_I(inode)->fd.link_count = 1;
             FFS_I(inode)->fd.file_size = 0;
-            kernel_msg(dir->i_sb, KERN_DEBUG, "new file datablock %d", FFS_I(inode)->fd.datablock_id);
+            kernel_msg(dir->i_sb, KERN_DEBUG, "new file inode#%d datablock#%d", fd_i, FFS_I(inode)->fd.datablock_id);
 
             inode->i_size = 0;
             inode->i_mode = S_IFREG|S_IRUGO|S_IWUGO;
@@ -165,43 +203,57 @@ static const struct inode_operations ffs_dir_inode_operations = {
 
 //=========== FILE ==========
 
-static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset)
+static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf, size_t max, loff_t *offset, int userspace)
 {   // read from file
-    struct dentry *de = file->f_dentry;
-    struct ffs_inode_info *f_inode = FFS_I(de->d_inode);
-    struct super_block *sb = de->d_inode->i_sb;
+    struct ffs_inode_info *f_inode = FFS_I(inode);
     struct buffer_head *bh;
     unsigned int block_count, block_index, block_offset, block_num, len, able_to_read;
     signed int till_end;
-    kernel_msg(sb, KERN_DEBUG, "reading file, offset %d", (int)*offset);
+    // kernel_msg(sb, KERN_DEBUG, "reading file, offset %d", (int)*offset);
 
     block_count = *(int*)(f_inode->datablock->b_data);
     block_index = (*offset) / FFS_BLOCK_SIZE;
     block_offset = (*offset)-(block_index*FFS_BLOCK_SIZE);
     block_num = *((int*)(f_inode->datablock->b_data)+block_index+1);
-    kernel_msg(sb, KERN_DEBUG, "block %d/%d [%d], block_offset %d", block_index, block_count, block_num, block_offset);
-    bh = sb_bread(sb, block_num);
-    able_to_read = FFS_BLOCK_SIZE-block_offset;
-    till_end = de->d_inode->i_size - block_index*FFS_BLOCK_SIZE - block_offset;
+    kernel_msg(sb, KERN_DEBUG, "block %d/%d [%d], block_offset %d", block_index+1, block_count, block_num, block_offset);
+    till_end = inode->i_size - block_index*FFS_BLOCK_SIZE - block_offset;
     if (till_end<0) {
         return 0;
     }
-    kernel_msg(sb, KERN_DEBUG, "%d till end", till_end);
+    bh = sb_bread(sb, block_num);
+    able_to_read = FFS_BLOCK_SIZE-block_offset;
+    // kernel_msg(sb, KERN_DEBUG, "%d till end", till_end);
     able_to_read = (till_end<able_to_read)?till_end:able_to_read;
     len = (able_to_read<=max)?able_to_read:max;
-    copy_to_user(buf, bh->b_data, len);
+    if (userspace)
+        copy_to_user(buf, bh->b_data, len);
+    else
+        memcpy(buf, bh->b_data, len);
     *offset += len;
 
+    brelse(bh);
+
     return len;
+}
+
+static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset)
+{
+    struct dentry *de = file->f_dentry;
+    struct inode *inode = de->d_inode;
+    struct super_block *sb = de->d_inode->i_sb;
+    return file_read(sb, inode, buf, max, offset, 1);
+    // return file_read(file, buf, max, offset, 1);
 }
 
 // directory ls
 int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     struct dentry *de = file->f_dentry;
     struct super_block *sb = de->d_inode->i_sb;
-    struct ffs_sb_info *sbi = sb->s_fs_info;
-    struct hlist_head *head = &sbi->inodes;
-    struct ffs_inode_info *i;
+    loff_t offset;
+    size_t dir_content_size;
+    struct inode *inode;
+    unsigned int i;
+    struct ffs_directory_entry *dir_content, *iter;
 
     kernel_msg(de->d_sb, KERN_DEBUG, "ffs: file_operations.readdir called");
     if(file->f_pos > 0 )
@@ -210,10 +262,21 @@ int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
        (filldir(dirent, "..", 2, file->f_pos++, de->d_parent->d_inode->i_ino, DT_DIR)))
         return 0;
 
-    hlist_for_each_entry(i, head, list_node) {
-        if(filldir(dirent, i->fd.filename, FFS_FILENAME_LENGTH, file->f_pos++, i->vfs_inode.i_ino, DT_REG))
-            return 0;
+    offset = 0;
+    dir_content_size = FFS_I(de->d_inode)->fd.file_size;
+    dir_content = kzalloc(dir_content_size, GFP_KERNEL);
+    while (file_read(sb, de->d_inode, (char*)dir_content, dir_content_size, &offset, 0));
+
+    iter = dir_content;
+    for (i=0; i< (dir_content_size/sizeof(struct ffs_directory_entry)); i++ ) {
+        kernel_msg(de->d_sb, KERN_DEBUG, "file #%d %s ", iter->i_fd, iter->filename);
+        if ((inode = ffs_iget(sb, FFS_USERFILES_OFFSET + iter->i_fd - 1))) //-1 because numbering from 1
+            if(filldir(dirent, iter->filename, FFS_FILENAME_LENGTH, file->f_pos++, inode->i_ino, DT_REG))
+                return 0;
+        iter += 1;
     }
+
+    kfree(dir_content);
     return 1;
 }
 
@@ -259,7 +322,7 @@ static int ffs_read_root(struct inode *inode)
     int copied, b_id, i, j, to_copy, index;
     int fd_per_block = FFS_BLOCK_SIZE / sizeof(struct ffs_fd);
     struct ffs_fd *fd;
-    struct inode *new_inode;
+    struct inode *new_inode = NULL;
     kernel_msg(sb, KERN_DEBUG, "ffs_read_root");
 
     b_bitmask_len = (sbi->block_count + 7) / 8;
@@ -275,6 +338,7 @@ static int ffs_read_root(struct inode *inode)
             to_copy = FFS_BLOCK_SIZE;
         memcpy(sbi->b_bitmask + copied, bh->b_data, to_copy);
         copied -= to_copy;
+        brelse(bh);
     }
 
     //read from b_bm_blocks block file descriptors bitmask
@@ -282,7 +346,7 @@ static int ffs_read_root(struct inode *inode)
     sbi->fd_bitmask = kzalloc(fd_bitmask_len, GFP_KERNEL);
     kernel_msg(sb, KERN_DEBUG, "fd bitmask: %d", fd_bitmask_len);
     
-    b_id = sbi->b_bm_blocks;
+    b_id = FFS_FD_BITMASK_BLOCK(sbi);
     kernel_msg(sb, KERN_DEBUG, "reading fd bitmap, block:%d", b_id);
     copied = 0;
     for(i=0; i<sbi->fd_bm_blocks; i++) {
@@ -292,27 +356,35 @@ static int ffs_read_root(struct inode *inode)
             to_copy = FFS_BLOCK_SIZE;
         memcpy(sbi->fd_bitmask + copied, bh->b_data, to_copy);
         copied -= to_copy;
+        brelse(bh);
     }
 
     //read descriptors
     index = 0;
-    b_id = sbi->b_bm_blocks + sbi->fd_bm_blocks;
+    b_id = FFS_B_BITMASK_BLOCK(sbi);
     for(i=0; i<sbi->fd_blocks; i++) {
         bh = sb_bread(sb, b_id++);
         fd = (struct ffs_fd *)bh->b_data;
         for(j=0; j<fd_per_block; j++) {
             if (index >= sbi->max_file_count) break;
             if (CHECK_BIT(sbi->fd_bitmask, index)) {
-                kernel_msg(sb, KERN_DEBUG, "found %s file", fd->filename);
-                new_inode = ffs_alloc_inode(sb);
-                new_inode->i_ino = FFS_USERFILES_OFFSET + index;
-                new_inode->i_size = fd->file_size;
+                kernel_msg(sb, KERN_DEBUG, "found %d file", index);
+                if ((fd->type == FFS_DIR) && (index == 0)) {
+                    kernel_msg(sb, KERN_DEBUG, "(is root directory)");
+                    new_inode = root_inode;
+                } else
                 if (fd->type == FFS_REG) {
+                    new_inode = ffs_alloc_inode(sb);
+                    new_inode->i_ino = FFS_USERFILES_OFFSET + index;
                     kernel_msg(sb, KERN_DEBUG, "(is regular file)");
                     new_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH;
-                } else; // directory
-                new_inode->i_fop = &ffs_file_fops;
+                    new_inode->i_fop = &ffs_file_fops;
+                } else if (fd->type == FFS_DIR) {
+                    kernel_msg(sb, KERN_DEBUG, "(is directory)");
+                    //TODO
+                }
 
+                new_inode->i_size = fd->file_size;
                 FFS_I(new_inode)->datablock = sb_bread(sb, fd->datablock_id);
                 _ffs_fd_copy(&(FFS_I(new_inode)->fd), fd);
 
@@ -321,6 +393,7 @@ static int ffs_read_root(struct inode *inode)
             fd += 1;
             index++;
         }
+        brelse(bh);
     }
     return 0;
 }
@@ -332,6 +405,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     struct buffer_head *bh;
     struct ffs_metainfo_sector *metainfo;
     struct inode *fsinfo_inode = 0;
+    kernel_msg(sb, KERN_DEBUG, "=======INIT============");
     kernel_msg(sb, KERN_DEBUG, "ffs_fill_super");
     /* filesystem information */
     sbi = kzalloc(sizeof(struct ffs_sb_info), GFP_KERNEL);
@@ -371,7 +445,7 @@ static int ffs_fill_super(struct super_block *sb, void *data, int silent)
     INIT_HLIST_HEAD(&sbi->inodes);
 
     // fill initial state of fs
-    root_inode = new_inode(sb);
+    root_inode = ffs_alloc_inode(sb);
     if (!root_inode)
         return -ENOMEM; 
     root_inode->i_ino = FFS_ROOT_INO;
@@ -422,8 +496,8 @@ static void ffs_kill_block_super(struct super_block *sb)
         kernel_msg(sb, KERN_DEBUG, "inode %d", i->vfs_inode.i_ino);
         ffs_destroy_inode(&i->vfs_inode);
     }
-
-    ffs_destroy_inode(root_inode);
+    kernel_msg(sb, KERN_DEBUG, "========EXIT===========");
+    // ffs_destroy_inode(root_inode);
 }
 
 static struct file_system_type ffs_fs_type = {

@@ -78,7 +78,7 @@ int main(int argc, char* argv[]) {
     write(fd, &info, sizeof(info));
 
     lseek(fd, FFS_BLOCK_SIZE*1, SEEK_SET);  // blocks bitmap
-    int c = service_blocks + 4; //FIXME: +1 for test file
+    int c = service_blocks + 6; //FIXME: +1 for test file, should be 2
     char b = 0;
 
     while (c) {
@@ -92,46 +92,69 @@ int main(int argc, char* argv[]) {
         write(fd, &b, sizeof(b));
     }
 
-    lseek(fd, FFS_BLOCK_SIZE*(info.b_bm_blocks), SEEK_SET);  // fd bitmap
+    lseek(fd, FFS_BLOCK_SIZE*(1+info.b_bm_blocks), SEEK_SET);  // fd bitmap
     // empty for now
-    b = BIT_MASK(2);  // FIXME: one file
+    b = BIT_MASK(3);  // FIXME: two files - should be (1)
     write(fd, &b, sizeof(b));
 
-    lseek(fd, FFS_BLOCK_SIZE*(info.b_bm_blocks+info.fd_bm_blocks), SEEK_SET);  // fd list
-    // FIXME: empty
+    lseek(fd, FFS_BLOCK_SIZE*(1+info.b_bm_blocks+info.fd_bm_blocks), SEEK_SET);  // fd list
+    // root directory fd
     struct ffs_fd file;
-    file.type = FFS_REG;
+    file.type = FFS_DIR;
     file.datablock_id = service_blocks;
     file.link_count = 1;
-    file.file_size = 3;
-    strcpy(file.filename, "hello.txt");
+    file.file_size = 2*sizeof(struct ffs_directory_entry);
     write(fd, &file, sizeof(struct ffs_fd));
 
+    // FIXME: empty
     file.type = FFS_REG;
     file.datablock_id = service_blocks+1;
     file.link_count = 1;
-    file.file_size = 4;
-    strcpy(file.filename, "world.txt");
+    file.file_size = 3;
     write(fd, &file, sizeof(struct ffs_fd));
 
-    // FIXME: data
+    file.type = FFS_REG;
+    file.datablock_id = service_blocks+2;
+    file.link_count = 1;
+    file.file_size = 4;
+    write(fd, &file, sizeof(struct ffs_fd));
+
+    // root directory datablock
     lseek(fd, FFS_BLOCK_SIZE*service_blocks, SEEK_SET);
     int data = 1;
-    write(fd, &data, sizeof(data)); // block count
-    data = service_blocks+2;
-    write(fd, &data, sizeof(data)); // block index
-
-    lseek(fd, FFS_BLOCK_SIZE*(service_blocks+1), SEEK_SET);
-    data = 1;
     write(fd, &data, sizeof(data)); // block count
     data = service_blocks+3;
     write(fd, &data, sizeof(data)); // block index
 
+    // // FIXME: data
+    lseek(fd, FFS_BLOCK_SIZE*(service_blocks+1), SEEK_SET);
+    data = 1;
+    write(fd, &data, sizeof(data)); // block count
+    data = service_blocks+4;
+    write(fd, &data, sizeof(data)); // block index
+
     lseek(fd, FFS_BLOCK_SIZE*(service_blocks+2), SEEK_SET);
+    data = 1;
+    write(fd, &data, sizeof(data)); // block count
+    data = service_blocks+5;
+    write(fd, &data, sizeof(data)); // block index
+
+    // root directory data
+    lseek(fd, FFS_BLOCK_SIZE*(service_blocks+3), SEEK_SET);
+    struct ffs_directory_entry file_entry;
+    file_entry.i_fd = 2; // first is root
+    strcpy(file_entry.filename, "hello.txt");
+    write(fd, &file_entry, sizeof(file_entry));
+
+    file_entry.i_fd = 3;
+    strcpy(file_entry.filename, "world.txt");
+    write(fd, &file_entry, sizeof(file_entry));
+
+    lseek(fd, FFS_BLOCK_SIZE*(service_blocks+4), SEEK_SET);
     char str[] = "42\n";
     write(fd, str, 3);
 
-    lseek(fd, FFS_BLOCK_SIZE*(service_blocks+3), SEEK_SET);
+    lseek(fd, FFS_BLOCK_SIZE*(service_blocks+5), SEEK_SET);
     char str2[] = "bla\n";
     write(fd, str2, 4);
 

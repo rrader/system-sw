@@ -10,5 +10,5 @@ mkfs.o: mkfs.c
 .PHONY: img
 img: mkfs.ffs
 	-rm -f img
-	dd if=/dev/zero of=img bs=1024 count=4096
+	dd if=/dev/zero of=img bs=1024 count=128
 	./mkfs.ffs img
