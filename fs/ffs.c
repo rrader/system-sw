@@ -137,8 +137,6 @@ static unsigned int ffs_get_empty_fd(struct super_block *sb)
             return i + 1;
         }
     }
-
-    //TODO: fix bitmask and write to block
     return 0;
 }
 
@@ -170,8 +168,6 @@ static unsigned int ffs_get_empty_block(struct super_block *sb)
             return i + 1;
         }
     }
-    
-    //TODO: fix bitmask and write to block
     return 0;
 }
 
@@ -208,7 +204,7 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             // inode->i_mode = S_IFREG|S_IRUGO|S_IWUGO;
             inode->i_fop = &ffs_file_fops;
 
-            // hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
+            hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
             break;
     }
 

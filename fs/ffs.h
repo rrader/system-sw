@@ -16,7 +16,7 @@
 #define SET_BIT(bm, n) *((char*)(bm) + ((n)/8)) = (*((char*)(bm) + ((n)/8)) | (char)(1 << ((n) % 8)))
 
 #define FFS_FD_BITMASK_BLOCK(sbi) (1 + sbi->b_bm_blocks)
-#define FFS_B_BITMASK_BLOCK(sbi) (1 + sbi->b_bm_blocks + sbi->fd_bm_blocks)
+#define FFS_B_BITMASK_BLOCK(sbi) (1)
 
 struct ffs_sb_info {
     unsigned int block_size;
