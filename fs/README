@@ -3,3 +3,8 @@ sudo umount -f /mnt/; make && sudo make reload && sudo mount -o loop -t ffs mkfs
 to write
 mark_buffer_dirty(bh);
 sync_dirty_buffer(bh);
+
+TODO:
+
+  - write to file (append)
+  - add file to directory

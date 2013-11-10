@@ -12,16 +12,17 @@ unsigned int last_ino = 3;
 struct inode *root_inode = 0;
 static struct kmem_cache *ffs_inode_cachep;
 
+static ssize_t ffs_file_write(struct file *filp, const char __user *buf, size_t len, loff_t *ppos);
 static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset);
 
 static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf, size_t max, loff_t *offset, int userspace);
-static int ffs_open(struct inode *inode, struct file *file);
 struct inode *ffs_iget(struct super_block *sb, loff_t i_pos);
 
 static struct inode *ffs_alloc_inode(struct super_block *sb);
 
-struct file_operations ffs_file_fops = {
-    read : &ffs_file_read,
+const struct file_operations ffs_file_fops = {
+    .read = ffs_file_read,
+    .write = ffs_file_write,
 };
 
 // ====== UTILS =======
@@ -171,6 +172,12 @@ static unsigned int ffs_get_empty_block(struct super_block *sb)
     return 0;
 }
 
+static int add_to_dir(struct inode *dir, struct inode *inode, struct dentry * dentry)
+{
+
+    return 0;
+}
+
 static int ffs_create (struct inode *dir, struct dentry * dentry,
                         umode_t mode, bool excl)
 {   // create regular file
@@ -205,6 +212,8 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             inode->i_fop = &ffs_file_fops;
 
             hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
+
+            add_to_dir(dir, inode, dentry);
             break;
     }
 
@@ -231,7 +240,26 @@ static const struct inode_operations ffs_dir_inode_operations = {
 
 //=========== FILE ==========
 
-static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf, size_t max, loff_t *offset, int userspace)
+static ssize_t file_write(struct super_block *sb, struct inode *inode, const char *buf, size_t len, loff_t *ppos, int is_userspace)
+{
+    struct ffs_inode_info *f_inode = FFS_I(inode);
+    unsigned int block_count = *(int*)(f_inode->datablock->b_data);
+    unsigned int block_index = (*ppos) / FFS_BLOCK_SIZE;
+    unsigned int last_block_num = *((int*)(f_inode->datablock->b_data)+block_index+1);
+    unsigned int curr_blocks_rem_bytes = (block_index+1)*FFS_BLOCK_SIZE - (*ppos);
+    kernel_msg(sb, KERN_DEBUG, "%d till #%d block end", curr_blocks_rem_bytes, block_index);
+    return 0;
+}
+
+static ssize_t ffs_file_write(struct file *file, const char __user *buf, size_t len, loff_t *ppos)
+{
+    struct dentry *de = file->f_dentry;
+    struct inode *inode = de->d_inode;
+    struct super_block *sb = de->d_inode->i_sb;
+    return file_write(sb, inode, buf, len, ppos, 1);
+}
+
+static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf, size_t max, loff_t *offset, int is_userspace)
 {   // read from file
     struct ffs_inode_info *f_inode = FFS_I(inode);
     struct buffer_head *bh;
@@ -253,7 +281,7 @@ static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf,
     // kernel_msg(sb, KERN_DEBUG, "%d till end", till_end);
     able_to_read = (till_end<able_to_read)?till_end:able_to_read;
     len = (able_to_read<=max)?able_to_read:max;
-    if (userspace)
+    if (is_userspace)
         copy_to_user(buf, bh->b_data, len);
     else
         memcpy(buf, bh->b_data, len);
