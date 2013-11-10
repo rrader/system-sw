@@ -12,6 +12,8 @@ unsigned int last_ino = 3;
 struct inode *root_inode = 0;
 static struct kmem_cache *ffs_inode_cachep;
 
+static ssize_t file_write(struct super_block *sb, struct inode *inode, const char *buf, size_t len, loff_t *ppos, int flags, int is_userspace);
+
 static ssize_t ffs_file_write(struct file *filp, const char __user *buf, size_t len, loff_t *ppos);
 static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset);
 
@@ -192,7 +194,14 @@ static unsigned int ffs_get_empty_block(struct super_block *sb)
 
 static int add_to_dir(struct inode *dir, struct inode *inode, struct dentry * dentry)
 {
-    //TODO
+    struct super_block *sb = dir->i_sb;
+    // struct ffs_sb_info *sbi = sb->s_fs_info;
+    struct ffs_directory_entry fde;
+    loff_t ppos = 0;
+    fde.i_fd = inode->i_ino - FFS_USERFILES_OFFSET + 1;
+    strcpy(fde.filename, dentry->d_name.name);
+    kernel_msg(sb, KERN_DEBUG, "Add file %s to dir...", fde.filename);
+    file_write(sb, dir, (char*)(&fde), sizeof(fde), &ppos, O_APPEND, 0);
     return 0;
 }
 
@@ -229,14 +238,18 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             // inode->i_mode = S_IFREG|S_IRUGO|S_IWUGO;
             inode->i_fop = &ffs_file_fops;
 
+            FFS_I(inode)->datablock = sb_bread(dir->i_sb, FFS_I(inode)->fd.datablock_id);
+
             hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
 
-            add_to_dir(dir, inode, dentry);
             break;
     }
 
-    d_instantiate(dentry, inode);  
+    d_instantiate(dentry, inode);
     dget(dentry);
+
+    ffs_write_inode(dir->i_sb, inode);
+    add_to_dir(dir, inode, dentry);
 
     return 0;
 cleanup:
@@ -612,7 +625,6 @@ static void ffs_kill_block_super(struct super_block *sb)
         ffs_destroy_inode(&i->vfs_inode);
     }
     kernel_msg(sb, KERN_DEBUG, "========EXIT===========");
-    // ffs_destroy_inode(root_inode);
 }
 
 static struct file_system_type ffs_fs_type = {
