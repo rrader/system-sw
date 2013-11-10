@@ -17,6 +17,7 @@
 
 #define FFS_FD_BITMASK_BLOCK(sbi) (1 + sbi->b_bm_blocks)
 #define FFS_B_BITMASK_BLOCK(sbi) (1)
+#define FFS_FD_LIST_BLOCK(sbi) (1 + sbi->b_bm_blocks + sbi->fd_bm_blocks)
 
 struct ffs_sb_info {
     unsigned int block_size;

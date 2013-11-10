@@ -384,7 +384,7 @@ static int ffs_read_root(struct inode *inode)
     sbi->b_bitmask = kzalloc(sbi->b_bitmask_len, GFP_KERNEL);
     kernel_msg(sb, KERN_DEBUG, "blocks bitmask: %d", sbi->b_bitmask_len);
 
-    b_id = 1;
+    b_id = FFS_B_BITMASK_BLOCK(sbi);
     copied = 0;
     for(i=0; i<sbi->b_bm_blocks; i++) {
         bh = sb_bread(sb, b_id++);
@@ -416,7 +416,7 @@ static int ffs_read_root(struct inode *inode)
 
     //read descriptors
     index = 0;
-    b_id = FFS_B_BITMASK_BLOCK(sbi);
+    b_id = FFS_FD_LIST_BLOCK(sbi);
     for(i=0; i<sbi->fd_blocks; i++) {
         bh = sb_bread(sb, b_id++);
         fd = (struct ffs_fd *)bh->b_data;
