@@ -168,7 +168,6 @@ static unsigned int ffs_get_empty_block(struct super_block *sb)
     struct buffer_head *bh;
     for(i=0; i<sbi->block_count; i++) {
         if (!CHECK_BIT(sbi->b_bitmask, i)) {
-
             spin_lock(&bitmap_b_lock);
             SET_BIT(sbi->b_bitmask, i);
             // mark dirty and sync BITMASK_PAGE(i) block
@@ -231,6 +230,7 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             FFS_I(inode)->fd.type = FFS_REG;
             FFS_I(inode)->fd.datablock_id = ffs_get_empty_block(dir->i_sb);
             FFS_I(inode)->fd.link_count = 1;
+            set_nlink(inode, FFS_I(inode)->fd.link_count);
             FFS_I(inode)->fd.file_size = 0;
             kernel_msg(dir->i_sb, KERN_DEBUG, "new file inode#%d datablock#%d", fd_i, FFS_I(inode)->fd.datablock_id);
 
@@ -257,10 +257,26 @@ cleanup:
     return -EINVAL;
 }
 
+static int ffs_link(struct dentry *old_dentry, struct inode *dir_i, struct dentry *dentry)
+{
+    struct inode *inode = old_dentry->d_inode;
+    struct ffs_inode_info *f_inode = FFS_I(inode);
+    struct super_block *sb = old_dentry->d_inode->i_sb;
+    kernel_msg(sb, KERN_DEBUG, "link %s", dentry->d_name.name);
+    d_instantiate(dentry, inode);
+    dget(dentry);
+    add_to_dir(dir_i, inode, dentry);
+    f_inode->fd.link_count++;
+    inc_nlink(inode);
+    ffs_write_inode(sb, inode);
+    return 0;
+}
+
 static const struct inode_operations ffs_dir_inode_operations = {
         .create         = ffs_create,
         .lookup         = ffs_lookup,
         // .mknod          = ffs_mknod,
+        .link           = ffs_link,
         // .unlink         = ffs_unlink,
         // .mkdir          = ffs_mkdir,
         // .rmdir          = ffs_rmdir,
@@ -515,7 +531,7 @@ static int ffs_read_root(struct inode *inode)
                 n_inode->i_size = fd->file_size;
                 FFS_I(n_inode)->datablock = sb_bread(sb, fd->datablock_id);
                 _ffs_fd_copy(&(FFS_I(n_inode)->fd), fd);
-
+                set_nlink(n_inode, fd->link_count);
                 hlist_add_head(&FFS_I(n_inode)->list_node, &sbi->inodes);
             }
             fd += 1;
