@@ -204,6 +204,46 @@ static int add_to_dir(struct inode *dir, struct inode *inode, struct dentry * de
     return 0;
 }
 
+static int remove_from_dir(struct inode *dir, struct inode *inode, struct dentry * dentry)
+{
+    struct super_block *sb = dir->i_sb;
+    loff_t offset;
+    size_t dir_content_size, to_copy;
+    unsigned int i;
+    struct ffs_directory_entry *dir_content, *iter;
+
+    kernel_msg(sb, KERN_DEBUG, "ffs: file_operations.readdir called");
+
+    offset = 0;
+    dir_content_size = FFS_I(dir)->fd.file_size;
+    dir_content = kzalloc(dir_content_size, GFP_KERNEL);
+    while (file_read(sb, dir, (char*)dir_content, dir_content_size, &offset, 0));
+
+    iter = dir_content;
+    for (i=0; i< (dir_content_size/sizeof(struct ffs_directory_entry)); i++ ) {
+        if (strcmp(dentry->d_name.name, iter->filename) == 0) {
+            kernel_msg(sb, KERN_DEBUG, "file found #%d %s ", iter->i_fd, iter->filename);
+            //copy from iter+1 to iter
+            to_copy = dir_content_size-((size_t)(iter+1)-(size_t)dir_content);
+            memcpy(iter, iter+1, to_copy);
+            offset = (size_t)iter-(size_t)dir_content;
+            file_write(sb, dir, (char*)iter, to_copy, &offset, 0, 0);
+            
+            //shrink
+            dir->i_size = dir_content_size-sizeof(struct ffs_directory_entry);
+            FFS_I(dir)->fd.file_size = dir->i_size;
+            ffs_write_inode(sb, dir);
+
+            kernel_msg(sb, KERN_DEBUG, "   : to_copy: %d offset %d fullsize: %d", to_copy, offset, dir_content_size);
+            break;
+        }
+        iter += 1;
+    }
+
+    kfree(dir_content);
+    return 1;
+}
+
 static int ffs_create (struct inode *dir, struct dentry * dentry,
                         umode_t mode, bool excl)
 {   // create regular file
@@ -272,17 +312,34 @@ static int ffs_link(struct dentry *old_dentry, struct inode *dir_i, struct dentr
     return 0;
 }
 
+static int ffs_unlink(struct inode *dir, struct dentry *dentry) {
+    struct inode *inode = dentry->d_inode;
+    struct super_block *sb = dentry->d_inode->i_sb;
+    struct ffs_inode_info *f_inode = FFS_I(inode);
+    remove_from_dir(dir, inode, dentry);
+    drop_nlink(inode);
+    f_inode->fd.link_count--;
+    ffs_write_inode(sb, inode);
+    return 0;
+}
+
+// static void ffs_truncate(struct inode *inode)
+// {
+//     //TODO:
+// }
+
 static const struct inode_operations ffs_dir_inode_operations = {
         .create         = ffs_create,
         .lookup         = ffs_lookup,
         // .mknod          = ffs_mknod,
         .link           = ffs_link,
-        // .unlink         = ffs_unlink,
+        .unlink         = ffs_unlink,
         // .mkdir          = ffs_mkdir,
         // .rmdir          = ffs_rmdir,
         // .rename         = ffs_rename,
         // .setattr        = ffs_setattr,
         // .getattr        = ffs_getattr,
+        // .truncate          = ffs_truncate,
 };
 
 //=========== FILE ==========
@@ -438,11 +495,7 @@ static struct inode *ffs_alloc_inode(struct super_block *sb)
     ei = (struct ffs_inode_info *)kmem_cache_alloc(ffs_inode_cachep, GFP_NOFS);
     if (!ei)
             return NULL;
-    // inode_init_always(sb, &ei->vfs_inode);
-    // ei->vfs_inode.i_sb = sb;
     kernel_msg(sb, KERN_DEBUG, "alloc inode");
-    // ei->vfs_inode.i_state = 0;
-    // insert_inode_hash(&ei->vfs_inode);
     return &ei->vfs_inode;
 }
 
