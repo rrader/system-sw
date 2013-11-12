@@ -21,6 +21,7 @@ static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf,
 struct inode *ffs_iget(struct super_block *sb, loff_t i_pos);
 
 static struct inode *ffs_alloc_inode(struct super_block *sb);
+static void ffs_destroy_inode(struct inode *inode);
 
 const struct file_operations ffs_file_fops = {
     .read   = ffs_file_read,
@@ -131,29 +132,70 @@ struct inode *ffs_iget(struct super_block *sb, loff_t i_pos)
     return NULL;
 }
 
+static void ffs_write_b_bitmask(struct super_block *sb, unsigned int i)
+{  // write i bit of bitmask
+    struct buffer_head *bh;
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    unsigned int len;
+    // mark dirty and sync BITMASK_PAGE(i) block
+    bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_B_BITMASK_BLOCK(sbi));
+    kernel_msg(sb, KERN_DEBUG, "BITMASK_B block#%d", BITMASK_PAGE(i) + FFS_B_BITMASK_BLOCK(sbi));
+    kernel_msg(sb, KERN_DEBUG, "%X\t%X", *(char*)bh->b_data, *(char*)sbi->b_bitmask);
+    len = sbi->b_bitmask_len - BITMASK_PAGE(i)*FFS_BLOCK_SIZE;
+    len = (len>FFS_BLOCK_SIZE)?FFS_BLOCK_SIZE:len;
+    memcpy(bh->b_data, sbi->b_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, len);
+    kernel_msg(sb, KERN_DEBUG, "copied %d bytes of bitmask", len);
+
+    mark_buffer_dirty(bh);
+    sync_dirty_buffer(bh);
+    wait_on_buffer(bh);
+}
+
+static unsigned int ffs_get_empty_block(struct super_block *sb)
+{   //find empty block and set bit in bitmask
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    unsigned int i;
+    for(i=0; i<sbi->block_count; i++) {
+        if (!CHECK_BIT(sbi->b_bitmask, i)) {
+            spin_lock(&bitmap_b_lock);
+            SET_BIT(sbi->b_bitmask, i);
+            ffs_write_b_bitmask(sb, i);
+            spin_unlock(&bitmap_b_lock);
+            // mark dirty and sync BITMASK_PAGE(i) block
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
+static void ffs_write_fd_bitmask(struct super_block *sb, unsigned int i)
+{  // write i bit of bitmask
+    struct buffer_head *bh;
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    unsigned int len;
+    // mark dirty and sync BITMASK_PAGE(i) block
+    bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
+    kernel_msg(sb, KERN_DEBUG, "BITMASK_FD block#%d", BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
+    kernel_msg(sb, KERN_DEBUG, "%X\t%X", *(char*)bh->b_data, *(char*)sbi->fd_bitmask);
+    len = sbi->fd_bitmask_len - BITMASK_PAGE(i)*FFS_BLOCK_SIZE;
+    len = (len>FFS_BLOCK_SIZE)?FFS_BLOCK_SIZE:len;
+    memcpy(bh->b_data, sbi->fd_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, len);
+    kernel_msg(sb, KERN_DEBUG, "copied %d bytes of bitmask", len);
+
+    mark_buffer_dirty(bh);
+    sync_dirty_buffer(bh);
+    wait_on_buffer(bh);
+}
+
 static unsigned int ffs_get_empty_fd(struct super_block *sb)
 {   //find empty fd and set bit in bitmask
     struct ffs_sb_info *sbi = sb->s_fs_info;
-    unsigned int i, len;
-    struct buffer_head *bh;
+    unsigned int i;
     for(i=0; i<sbi->max_file_count; i++) {
         if (!CHECK_BIT(sbi->fd_bitmask, i)) {
-            
             spin_lock(&bitmap_fd_lock);
             SET_BIT(sbi->fd_bitmask, i);
-            // mark dirty and sync BITMASK_PAGE(i) block
-            bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
-            kernel_msg(sb, KERN_DEBUG, "BITMASK_FD block#%d", BITMASK_PAGE(i) + FFS_FD_BITMASK_BLOCK(sbi));
-            kernel_msg(sb, KERN_DEBUG, "%X\t%X", *(char*)bh->b_data, *(char*)sbi->fd_bitmask);
-            len = sbi->fd_bitmask_len - BITMASK_PAGE(i)*FFS_BLOCK_SIZE;
-            len = (len>FFS_BLOCK_SIZE)?FFS_BLOCK_SIZE:len;
-            memcpy(bh->b_data, sbi->fd_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, len);
-            kernel_msg(sb, KERN_DEBUG, "copied %d bytes of bitmask", len);
-
-            mark_buffer_dirty(bh);
-            sync_dirty_buffer(bh);
-            wait_on_buffer(bh);
-
+            ffs_write_fd_bitmask(sb, i);
             spin_unlock(&bitmap_fd_lock);
             return i + 1;
         }
@@ -161,33 +203,33 @@ static unsigned int ffs_get_empty_fd(struct super_block *sb)
     return 0;
 }
 
-static unsigned int ffs_get_empty_block(struct super_block *sb)
-{   //find empty block and set bit in bitmask
+static unsigned int ffs_clear_fd(struct super_block *sb, struct ffs_inode_info *f_inode)
+{   //clear fd
     struct ffs_sb_info *sbi = sb->s_fs_info;
-    unsigned int i, len;
-    struct buffer_head *bh;
-    for(i=0; i<sbi->block_count; i++) {
-        if (!CHECK_BIT(sbi->b_bitmask, i)) {
-            spin_lock(&bitmap_b_lock);
-            SET_BIT(sbi->b_bitmask, i);
-            // mark dirty and sync BITMASK_PAGE(i) block
-            bh = sb_bread(sb, BITMASK_PAGE(i) + FFS_B_BITMASK_BLOCK(sbi));
-            kernel_msg(sb, KERN_DEBUG, "BITMASK_B block#%d", BITMASK_PAGE(i) + FFS_B_BITMASK_BLOCK(sbi));
-            kernel_msg(sb, KERN_DEBUG, "%X\t%X", *(char*)bh->b_data, *(char*)sbi->b_bitmask);
-            len = sbi->b_bitmask_len - BITMASK_PAGE(i)*FFS_BLOCK_SIZE;
-            len = (len>FFS_BLOCK_SIZE)?FFS_BLOCK_SIZE:len;
-            memcpy(bh->b_data, sbi->b_bitmask+BITMASK_PAGE(i)*FFS_BLOCK_SIZE, len);
-            kernel_msg(sb, KERN_DEBUG, "copied %d bytes of bitmask", len);
+    unsigned int len, b, bi;
+    unsigned int i = f_inode->vfs_inode.i_ino - FFS_USERFILES_OFFSET;
+    kernel_msg(sb, KERN_DEBUG, "clearing FD %d", i);
 
-            mark_buffer_dirty(bh);
-            sync_dirty_buffer(bh);
-            wait_on_buffer(bh);
+    spin_lock(&bitmap_fd_lock);
+    spin_lock(&bitmap_b_lock);
 
-            spin_unlock(&bitmap_b_lock);
-            // mark dirty and sync BITMASK_PAGE(i) block
-            return i + 1;
-        }
+    //clear blocks
+    len = *(int*)(f_inode->datablock->b_data);
+    kernel_msg(sb, KERN_DEBUG, "blocks: %d", len);
+    for(b=1; b<=len; b++) {
+        bi = *((int*)(f_inode->datablock->b_data)+b); // block index
+        kernel_msg(sb, KERN_DEBUG, "clearing block %d", bi);
+        RESET_BIT(sbi->b_bitmask, bi);
+        ffs_write_b_bitmask(sb, bi);
     }
+    RESET_BIT(sbi->b_bitmask, f_inode->fd.datablock_id);
+    ffs_write_b_bitmask(sb, f_inode->fd.datablock_id);
+
+    //clear fd
+    RESET_BIT(sbi->fd_bitmask, i);
+    ffs_write_fd_bitmask(sb, i);
+    spin_unlock(&bitmap_fd_lock);
+    spin_unlock(&bitmap_b_lock);
     return 0;
 }
 
@@ -268,7 +310,7 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
 
             // strcpy(FFS_I(inode)->fd.filename, dentry->d_name.name);
             FFS_I(inode)->fd.type = FFS_REG;
-            FFS_I(inode)->fd.datablock_id = ffs_get_empty_block(dir->i_sb);
+            FFS_I(inode)->fd.datablock_id = ffs_get_empty_block(dir->i_sb)-1;
             FFS_I(inode)->fd.link_count = 1;
             set_nlink(inode, FFS_I(inode)->fd.link_count);
             FFS_I(inode)->fd.file_size = 0;
@@ -279,6 +321,11 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             inode->i_fop = &ffs_file_fops;
 
             FFS_I(inode)->datablock = sb_bread(dir->i_sb, FFS_I(inode)->fd.datablock_id);
+
+            memset(FFS_I(inode)->datablock->b_data, 0, FFS_BLOCK_SIZE);
+            mark_buffer_dirty(FFS_I(inode)->datablock);
+            sync_dirty_buffer(FFS_I(inode)->datablock);
+            wait_on_buffer(FFS_I(inode)->datablock);
 
             hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
 
@@ -316,17 +363,23 @@ static int ffs_unlink(struct inode *dir, struct dentry *dentry) {
     struct inode *inode = dentry->d_inode;
     struct super_block *sb = dentry->d_inode->i_sb;
     struct ffs_inode_info *f_inode = FFS_I(inode);
+
+    kernel_msg(sb, KERN_DEBUG, "unlink %s", dentry->d_name.name);
     remove_from_dir(dir, inode, dentry);
-    drop_nlink(inode);
     f_inode->fd.link_count--;
-    ffs_write_inode(sb, inode);
+
+    if (f_inode->fd.link_count == 0) {
+        ffs_clear_fd(sb, f_inode);
+    }
+    drop_nlink(inode);
+    if (f_inode->fd.link_count == 0) {
+        hlist_del(&f_inode->list_node);
+        // ffs_destroy_inode(inode);
+    } else {
+        ffs_write_inode(sb, inode);
+    }
     return 0;
 }
-
-// static void ffs_truncate(struct inode *inode)
-// {
-//     //TODO:
-// }
 
 static const struct inode_operations ffs_dir_inode_operations = {
         .create         = ffs_create,
@@ -355,7 +408,7 @@ static ssize_t file_write(struct super_block *sb, struct inode *inode, const cha
     struct buffer_head *bh;
     unsigned int to_copy=0, copy_left;
     unsigned int curr_block_offset = 0;
-    kernel_msg(sb, KERN_DEBUG, "%d till #%d block end; %d offset, flags %d", curr_blocks_rem_bytes, block_index, f_pos, flags);
+    kernel_msg(sb, KERN_DEBUG, "WRITE count:%d %d till #%d block end; %d offset, flags %d", block_count, curr_blocks_rem_bytes, block_index, f_pos, flags);
 
     copy_left = len;
     while (copy_left) {
@@ -364,7 +417,7 @@ static ssize_t file_write(struct super_block *sb, struct inode *inode, const cha
         if ((block_index+1) > block_count) {
             //TODO: check free space on device
             (*(int*)(f_inode->datablock->b_data))++;
-            *((int*)(f_inode->datablock->b_data)+block_index+1) = ffs_get_empty_block(sb);
+            *((int*)(f_inode->datablock->b_data)+block_index+1) = ffs_get_empty_block(sb)-1;
             mark_buffer_dirty(f_inode->datablock);
             sync_dirty_buffer(f_inode->datablock);
             wait_on_buffer(f_inode->datablock);
@@ -583,6 +636,7 @@ static int ffs_read_root(struct inode *inode)
 
                 n_inode->i_size = fd->file_size;
                 FFS_I(n_inode)->datablock = sb_bread(sb, fd->datablock_id);
+                kernel_msg(sb, KERN_DEBUG, "datablock #%d assigned", fd->datablock_id);
                 _ffs_fd_copy(&(FFS_I(n_inode)->fd), fd);
                 set_nlink(n_inode, fd->link_count);
                 hlist_add_head(&FFS_I(n_inode)->list_node, &sbi->inodes);
