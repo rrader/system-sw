@@ -23,6 +23,8 @@ struct inode *ffs_iget(struct super_block *sb, loff_t i_pos);
 static struct inode *ffs_alloc_inode(struct super_block *sb);
 static void ffs_destroy_inode(struct inode *inode);
 
+static const struct inode_operations ffs_inode_fops;
+
 const struct file_operations ffs_file_fops = {
     .read   = ffs_file_read,
     .write  = ffs_file_write,
@@ -61,9 +63,6 @@ static inline struct ffs_inode_info *FFS_I(struct inode *inode)
 struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, unsigned int flags)
 {   // add inode to dentry
     struct super_block *sb = parent_inode->i_sb;
-    // struct ffs_sb_info *sbi = sb->s_fs_info;
-    // struct hlist_head *head = &sbi->inodes;
-    // struct ffs_inode_info *i;
 
     loff_t offset;
     size_t dir_content_size;
@@ -319,6 +318,7 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
             inode->i_size = 0;
             // inode->i_mode = S_IFREG|S_IRUGO|S_IWUGO;
             inode->i_fop = &ffs_file_fops;
+            inode->i_op = &ffs_inode_fops;
 
             FFS_I(inode)->datablock = sb_bread(dir->i_sb, FFS_I(inode)->fd.datablock_id);
 
@@ -381,6 +381,42 @@ static int ffs_unlink(struct inode *dir, struct dentry *dentry) {
     return 0;
 }
 
+static int ffs_setattr(struct dentry *dentry, struct iattr *attr)
+{
+    struct inode *inode = dentry->d_inode;
+    struct ffs_inode_info *f_inode = FFS_I(inode);
+    struct super_block *sb = inode->i_sb;
+    struct ffs_sb_info *sbi = sb->s_fs_info;
+    unsigned int prev_count, new_count, i;
+    kernel_msg(inode->i_sb, KERN_DEBUG, "%s file change (was %d bytes, now %d)", dentry->d_name.name, inode->i_size, attr->ia_size);
+    if (inode->i_size != attr->ia_size) {
+        prev_count = *(int*)(f_inode->datablock->b_data);
+        new_count = (attr->ia_size + FFS_BLOCK_SIZE-1) / FFS_BLOCK_SIZE;
+        kernel_msg(inode->i_sb, KERN_DEBUG, "%d => %d", prev_count, new_count);
+        if (attr->ia_size > f_inode->fd.file_size) { //possibly truncating
+            kernel_msg(inode->i_sb, KERN_DEBUG, "expanding");
+            for(i=prev_count; i<(new_count-prev_count); i++)
+                *(int*)(f_inode->datablock->b_data) = ffs_get_empty_block(sb)-1;
+
+        } else if (attr->ia_size < f_inode->fd.file_size)  {
+            kernel_msg(inode->i_sb, KERN_DEBUG, "truncate");
+            for(i=prev_count; i<(new_count-prev_count); i++) { //free unused blocks
+                RESET_BIT(sbi->b_bitmask, *(int*)(f_inode->datablock->b_data));
+                ffs_write_b_bitmask(sb, *(int*)(f_inode->datablock->b_data));
+            }
+        }
+
+        *(int*)(f_inode->datablock->b_data) = new_count;
+        mark_buffer_dirty(f_inode->datablock);
+        sync_dirty_buffer(f_inode->datablock);
+        wait_on_buffer(f_inode->datablock);
+        f_inode->fd.file_size = attr->ia_size;
+        ffs_write_inode(sb, inode);
+    }
+    return 0;
+}
+
+
 static const struct inode_operations ffs_dir_inode_operations = {
         .create         = ffs_create,
         .lookup         = ffs_lookup,
@@ -390,9 +426,10 @@ static const struct inode_operations ffs_dir_inode_operations = {
         // .mkdir          = ffs_mkdir,
         // .rmdir          = ffs_rmdir,
         // .rename         = ffs_rename,
-        // .setattr        = ffs_setattr,
-        // .getattr        = ffs_getattr,
-        // .truncate          = ffs_truncate,
+};
+
+static const struct inode_operations ffs_inode_fops = {
+        .setattr        = ffs_setattr,
 };
 
 //=========== FILE ==========
@@ -629,6 +666,7 @@ static int ffs_read_root(struct inode *inode)
                     kernel_msg(sb, KERN_DEBUG, "(is regular file)");
                     n_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH;
                     n_inode->i_fop = &ffs_file_fops;
+                    n_inode->i_op = &ffs_inode_fops;
                 } else if (fd->type == FFS_DIR) {
                     kernel_msg(sb, KERN_DEBUG, "(is directory)");
                     //TODO
