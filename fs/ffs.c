@@ -34,7 +34,6 @@ const struct file_operations ffs_file_fops = {
 
 void _ffs_fd_copy(struct ffs_fd *to, struct ffs_fd *from)
 {   // copy file descriptor
-    // strcpy(to->filename, from->filename);
     to->link_count = from->link_count;
     to->file_size = from->file_size;
     to->type = from->type;
@@ -388,19 +387,21 @@ static int ffs_setattr(struct dentry *dentry, struct iattr *attr)
     struct super_block *sb = inode->i_sb;
     struct ffs_sb_info *sbi = sb->s_fs_info;
     unsigned int prev_count, new_count, i;
-    kernel_msg(inode->i_sb, KERN_DEBUG, "%s file change (was %d bytes, now %d)", dentry->d_name.name, inode->i_size, attr->ia_size);
-    if (inode->i_size != attr->ia_size) {
+
+    if ((attr->ia_valid & ATTR_SIZE) && (inode->i_size != attr->ia_size)) { //possibly truncating
+        kernel_msg(inode->i_sb, KERN_DEBUG, "%s file truncated (was %d bytes, now %d)", dentry->d_name.name, inode->i_size, attr->ia_size);
         prev_count = *(int*)(f_inode->datablock->b_data);
         new_count = (attr->ia_size + FFS_BLOCK_SIZE-1) / FFS_BLOCK_SIZE;
         kernel_msg(inode->i_sb, KERN_DEBUG, "%d => %d", prev_count, new_count);
-        if (attr->ia_size > f_inode->fd.file_size) { //possibly truncating
+        if (attr->ia_size > f_inode->fd.file_size) {
             kernel_msg(inode->i_sb, KERN_DEBUG, "expanding");
             for(i=prev_count; i<(new_count-prev_count); i++)
                 *(int*)(f_inode->datablock->b_data) = ffs_get_empty_block(sb)-1;
 
         } else if (attr->ia_size < f_inode->fd.file_size)  {
             kernel_msg(inode->i_sb, KERN_DEBUG, "truncate");
-            for(i=prev_count; i<(new_count-prev_count); i++) { //free unused blocks
+
+            for(i=prev_count; i>new_count; i--) { //free unused blocks
                 RESET_BIT(sbi->b_bitmask, *(int*)(f_inode->datablock->b_data));
                 ffs_write_b_bitmask(sb, *(int*)(f_inode->datablock->b_data));
             }
