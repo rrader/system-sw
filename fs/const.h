@@ -15,7 +15,7 @@ struct ffs_metainfo_sector {
     unsigned int fd_bm_blocks;    // file descriptors bitmask
 };
 
-enum ffs_file_type {FFS_REG, FFS_DIR, FFS_HLINK, FFS_SLINK};
+enum ffs_file_type {FFS_REG, FFS_DIR, FFS_SLINK};
 
 struct ffs_fd { // file descriptor
     unsigned int type;
