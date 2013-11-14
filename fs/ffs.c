@@ -25,6 +25,7 @@ static const struct file_operations ffs_file_fops;
 
 static const struct inode_operations ffs_dir_inode_operations;
 static const struct file_operations ffs_dir_fops;
+static const struct inode_operations ffs_inode_linkops;
 
 // ====== UTILS =======
 
@@ -311,6 +312,13 @@ static int create_entry(struct inode *dir, struct dentry * dentry,
             inode->i_op = &ffs_inode_fops;
             kernel_msg(dir->i_sb, KERN_DEBUG, "create file... %s", dentry->d_name.name);
             break;
+        case S_IFLNK:
+            inode->i_mode = mode | S_IFLNK;
+            FFS_I(inode)->fd.type = FFS_SLINK;
+            inode->i_fop = &ffs_file_fops;
+            inode->i_op = &ffs_inode_linkops;
+            kernel_msg(dir->i_sb, KERN_DEBUG, "create symlink... %s", dentry->d_name.name);
+            break;
         default:
             goto cleanup;
     }
@@ -442,6 +450,30 @@ static int ffs_setattr(struct dentry *dentry, struct iattr *attr)
     return 0;
 }
 
+static int ffs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
+{
+    struct super_block *sb = dir->i_sb;
+    unsigned int err = create_entry(dir, dentry, S_IFLNK | S_IRUGO | S_IWUGO);//S_IFLNK
+    loff_t offset = 0;
+    if (err)
+        return err;
+    file_write(sb, dentry->d_inode, symname, strlen(symname), &offset, 0, 0);
+    return 0;
+}
+
+static void *ffs_follow_link(struct dentry *dentry, struct nameidata *nd)
+{
+    struct super_block *sb = dentry->d_inode->i_sb;
+    char *link_content;
+    loff_t offset = 0;
+    unsigned int link_content_length = dentry->d_inode->i_size;
+
+    link_content = kzalloc(link_content_length, GFP_KERNEL);
+    while (file_read(sb, dentry->d_inode, link_content, link_content_length, &offset, 0));
+//FIXME: MEMORY LEAK?
+    nd_set_link(nd, link_content);
+    return NULL;
+}
 
 static const struct inode_operations ffs_dir_inode_operations = {
         .create         = ffs_create,
@@ -451,11 +483,20 @@ static const struct inode_operations ffs_dir_inode_operations = {
         .unlink         = ffs_unlink,
         .mkdir          = ffs_mkdir,
         .rmdir          = ffs_rmdir,
+        .symlink        = ffs_symlink,
         // .rename         = ffs_rename,
+};
+
+static const struct inode_operations ffs_inode_linkops = {
+        // .setattr        = ffs_setattr,
+        .symlink        = ffs_symlink,
+        .follow_link    = ffs_follow_link,
+        .readlink       = generic_readlink,
 };
 
 static const struct inode_operations ffs_inode_fops = {
         .setattr        = ffs_setattr,
+        .symlink        = ffs_symlink,
 };
 
 //=========== FILE ==========

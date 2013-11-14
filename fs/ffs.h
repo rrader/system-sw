@@ -8,6 +8,8 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/limits.h>
+#include <linux/namei.h>
+
 #include "const.h"
 
 #define BITMASK_BYTE(n) ((n)/8)
