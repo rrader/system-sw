@@ -1,10 +1,16 @@
 sudo umount -f /mnt/; make && sudo make reload && sudo mount -o loop -t ffs mkfs.ffs/img /mnt
 
-to write
-mark_buffer_dirty(bh);
-sync_dirty_buffer(bh);
+Works:
+
+  - write/append file
+  - read file
+  - list dir
+  - remove file
+  - mkdir
+  - rmdir
+  - hard links
+  - symbolic links
 
 TODO:
 
-  - write to file (append)
-  - add file to directory
+  - rename

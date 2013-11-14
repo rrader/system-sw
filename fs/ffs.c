@@ -7,8 +7,6 @@
 static DEFINE_SPINLOCK(bitmap_fd_lock);
 static DEFINE_SPINLOCK(bitmap_b_lock);
 
-unsigned int last_ino = 3;
-
 struct inode *root_inode = 0;
 static struct kmem_cache *ffs_inode_cachep;
 
@@ -488,7 +486,6 @@ static const struct inode_operations ffs_dir_inode_operations = {
 };
 
 static const struct inode_operations ffs_inode_linkops = {
-        // .setattr        = ffs_setattr,
         .symlink        = ffs_symlink,
         .follow_link    = ffs_follow_link,
         .readlink       = generic_readlink,
@@ -745,6 +742,11 @@ static int ffs_read_root(struct inode *inode)
                         n_inode->i_mode = S_IFREG | S_IRUGO | S_IWUGO;
                         n_inode->i_fop = &ffs_file_fops;
                         n_inode->i_op = &ffs_inode_fops;
+                    } else if (fd->type == FFS_SLINK) {
+                        kernel_msg(sb, KERN_DEBUG, "(is symlink)");
+                        n_inode->i_mode = S_IFLNK | S_IRUGO | S_IWUGO;
+                        n_inode->i_fop = &ffs_file_fops;
+                        n_inode->i_op = &ffs_inode_linkops;
                     } else if (fd->type == FFS_DIR) {
                         kernel_msg(sb, KERN_DEBUG, "(is directory)");
                         n_inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUGO;
