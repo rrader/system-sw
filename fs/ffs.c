@@ -14,9 +14,6 @@ static struct kmem_cache *ffs_inode_cachep;
 
 static ssize_t file_write(struct super_block *sb, struct inode *inode, const char *buf, size_t len, loff_t *ppos, int flags, int is_userspace);
 
-static ssize_t ffs_file_write(struct file *filp, const char __user *buf, size_t len, loff_t *ppos);
-static ssize_t ffs_file_read(struct file *file, char __user *buf, size_t max, loff_t *offset);
-
 static ssize_t file_read(struct super_block *sb, struct inode *inode, char *buf, size_t max, loff_t *offset, int userspace);
 struct inode *ffs_iget(struct super_block *sb, loff_t i_pos);
 
@@ -24,11 +21,10 @@ static struct inode *ffs_alloc_inode(struct super_block *sb);
 static void ffs_destroy_inode(struct inode *inode);
 
 static const struct inode_operations ffs_inode_fops;
+static const struct file_operations ffs_file_fops;
 
-const struct file_operations ffs_file_fops = {
-    .read   = ffs_file_read,
-    .write  = ffs_file_write,
-};
+static const struct inode_operations ffs_dir_inode_operations;
+static const struct file_operations ffs_dir_fops;
 
 // ====== UTILS =======
 
@@ -70,7 +66,7 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
     struct ffs_directory_entry *dir_content, *iter;
 
     kernel_msg(sb, KERN_DEBUG, "lookup... %s", dentry->d_name.name);
-    if (parent_inode->i_ino != FFS_ROOT_INO)
+    if (!(parent_inode->i_mode & S_IFDIR))
         // d_add(dentry, NULL);
         return ERR_PTR(-ENOENT);
 
@@ -93,6 +89,7 @@ struct dentry *ffs_lookup(struct inode *parent_inode, struct dentry *dentry, uns
     }
 
     kfree(dir_content);
+    kernel_msg(sb, KERN_DEBUG, "negative dentry");
     d_add(dentry, NULL);
     return NULL;
 }
@@ -286,9 +283,9 @@ static int remove_from_dir(struct inode *dir, struct inode *inode, struct dentry
     return 1;
 }
 
-static int ffs_create (struct inode *dir, struct dentry * dentry,
-                        umode_t mode, bool excl)
-{   // create regular file
+static int create_entry(struct inode *dir, struct dentry * dentry,
+                        umode_t mode)
+{
     struct inode *inode;
     struct ffs_sb_info *sbi = dir->i_sb->s_fs_info;
     int fd_i;
@@ -301,38 +298,41 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
     inode->i_ino = FFS_USERFILES_OFFSET + (--fd_i);
     switch (mode & S_IFMT) {
         case S_IFDIR:
-            // TODO: folder
-            goto cleanup;
+            inode->i_mode = mode | S_IFDIR;
+            FFS_I(inode)->fd.type = FFS_DIR;
+            inode->i_fop = &ffs_dir_fops;
+            inode->i_op = &ffs_dir_inode_operations;
+            kernel_msg(dir->i_sb, KERN_DEBUG, "create directory... %s", dentry->d_name.name);
             break;
-        default:
+        case S_IFREG:
             inode->i_mode = mode | S_IFREG;
-            kernel_msg(dir->i_sb, KERN_DEBUG, "create file... %s", dentry->d_name.name);
-
-            // strcpy(FFS_I(inode)->fd.filename, dentry->d_name.name);
             FFS_I(inode)->fd.type = FFS_REG;
-            FFS_I(inode)->fd.datablock_id = ffs_get_empty_block(dir->i_sb)-1;
-            FFS_I(inode)->fd.link_count = 1;
-            set_nlink(inode, FFS_I(inode)->fd.link_count);
-            FFS_I(inode)->fd.file_size = 0;
-            kernel_msg(dir->i_sb, KERN_DEBUG, "new file inode#%d datablock#%d", fd_i, FFS_I(inode)->fd.datablock_id);
-
-            inode->i_size = 0;
-            // inode->i_mode = S_IFREG|S_IRUGO|S_IWUGO;
             inode->i_fop = &ffs_file_fops;
             inode->i_op = &ffs_inode_fops;
-
-            FFS_I(inode)->datablock = sb_bread(dir->i_sb, FFS_I(inode)->fd.datablock_id);
-
-            memset(FFS_I(inode)->datablock->b_data, 0, FFS_BLOCK_SIZE);
-            mark_buffer_dirty(FFS_I(inode)->datablock);
-            sync_dirty_buffer(FFS_I(inode)->datablock);
-            wait_on_buffer(FFS_I(inode)->datablock);
-
-            hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
-
+            kernel_msg(dir->i_sb, KERN_DEBUG, "create file... %s", dentry->d_name.name);
             break;
+        default:
+            goto cleanup;
     }
 
+    FFS_I(inode)->fd.datablock_id = ffs_get_empty_block(dir->i_sb)-1;
+    FFS_I(inode)->fd.link_count = 1;
+    set_nlink(inode, FFS_I(inode)->fd.link_count);
+    FFS_I(inode)->fd.file_size = 0;
+    kernel_msg(dir->i_sb, KERN_DEBUG, "new inode#%d datablock#%d", fd_i, FFS_I(inode)->fd.datablock_id);
+
+    inode->i_size = 0;
+
+    FFS_I(inode)->datablock = sb_bread(dir->i_sb, FFS_I(inode)->fd.datablock_id);
+
+    memset(FFS_I(inode)->datablock->b_data, 0, FFS_BLOCK_SIZE);
+    mark_buffer_dirty(FFS_I(inode)->datablock);
+    sync_dirty_buffer(FFS_I(inode)->datablock);
+    wait_on_buffer(FFS_I(inode)->datablock);
+
+    hlist_add_head(&FFS_I(inode)->list_node, &sbi->inodes);
+
+//-----
     d_instantiate(dentry, inode);
     dget(dentry);
 
@@ -343,6 +343,18 @@ static int ffs_create (struct inode *dir, struct dentry * dentry,
 cleanup:
     iput(inode);
     return -EINVAL;
+}
+
+static int ffs_mkdir(struct inode *dir, struct dentry * dentry,
+                        umode_t mode)
+{
+    return create_entry(dir, dentry, mode | S_IFDIR);
+}
+
+static int ffs_create(struct inode *dir, struct dentry * dentry,
+                        umode_t mode, bool excl)
+{   // create regular file/directory
+    return create_entry(dir, dentry, mode);
 }
 
 static int ffs_link(struct dentry *old_dentry, struct inode *dir_i, struct dentry *dentry)
@@ -380,6 +392,16 @@ static int ffs_unlink(struct inode *dir, struct dentry *dentry) {
         ffs_write_inode(sb, inode);
     }
     return 0;
+}
+
+static int ffs_rmdir(struct inode *parent, struct dentry *dentry)
+{
+    struct super_block *sb = dentry->d_inode->i_sb;
+    if (dentry->d_inode->i_size > 0) {
+        kernel_msg(sb, KERN_DEBUG, "attempt to remove not empty directory");
+        return -ENOTEMPTY;
+    }
+    return ffs_unlink(parent, dentry);
 }
 
 static int ffs_setattr(struct dentry *dentry, struct iattr *attr)
@@ -427,8 +449,8 @@ static const struct inode_operations ffs_dir_inode_operations = {
         // .mknod          = ffs_mknod,
         .link           = ffs_link,
         .unlink         = ffs_unlink,
-        // .mkdir          = ffs_mkdir,
-        // .rmdir          = ffs_rmdir,
+        .mkdir          = ffs_mkdir,
+        .rmdir          = ffs_rmdir,
         // .rename         = ffs_rename,
 };
 
@@ -582,8 +604,13 @@ int ffs_f_readdir( struct file *file, void *dirent, filldir_t filldir ) {
     return 1;
 }
 
-struct file_operations ffs_dir_fops = {
+static const struct file_operations ffs_dir_fops = {
     readdir: &ffs_f_readdir
+};
+
+static const struct file_operations ffs_file_fops = {
+    .read   = ffs_file_read,
+    .write  = ffs_file_write,
 };
 
 // ========== SUPER ===========
@@ -669,16 +696,20 @@ static int ffs_read_root(struct inode *inode)
                     kernel_msg(sb, KERN_DEBUG, "(is root directory)");
                     n_inode = root_inode;
                 } else
-                if (fd->type == FFS_REG) {
+                {
                     n_inode = new_inode(sb);
                     n_inode->i_ino = FFS_USERFILES_OFFSET + index;
-                    kernel_msg(sb, KERN_DEBUG, "(is regular file)");
-                    n_inode->i_mode = S_IFREG|S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH;
-                    n_inode->i_fop = &ffs_file_fops;
-                    n_inode->i_op = &ffs_inode_fops;
-                } else if (fd->type == FFS_DIR) {
-                    kernel_msg(sb, KERN_DEBUG, "(is directory)");
-                    //TODO
+                    if (fd->type == FFS_REG) {
+                        kernel_msg(sb, KERN_DEBUG, "(is regular file)");
+                        n_inode->i_mode = S_IFREG | S_IRUGO | S_IWUGO;
+                        n_inode->i_fop = &ffs_file_fops;
+                        n_inode->i_op = &ffs_inode_fops;
+                    } else if (fd->type == FFS_DIR) {
+                        kernel_msg(sb, KERN_DEBUG, "(is directory)");
+                        n_inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUGO;
+                        n_inode->i_fop = &ffs_dir_fops;
+                        n_inode->i_op = &ffs_dir_inode_operations;
+                    }
                 }
 
                 n_inode->i_size = fd->file_size;
