@@ -5,3 +5,4 @@ Module.symvers
 mkfs.ffs/img
 modules.order
 mkfs.ffs/mkfs.ffs
+*.odt
